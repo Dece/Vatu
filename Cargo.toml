@@ -1,0 +1,7 @@
+[package]
+name = "vatu"
+version = "0.1.0"
+authors = ["dece <shgck@pistache.land>"]
+edition = "2018"
+
+[dependencies]
