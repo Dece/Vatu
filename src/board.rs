@@ -168,8 +168,9 @@ pub fn draw(board: &Board) {
             let piece = if is_color(s, SQ_WH) { piece.to_ascii_uppercase() } else { piece };
             rank.push(piece);
         }
-        println!("{}", rank);
+        println!("{} {}", r + 1, rank);
     }
+    println!("  abcdefgh");
 }
 
 #[cfg(test)]

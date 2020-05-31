@@ -2,7 +2,12 @@
 
 use crate::board::*;
 
-/// Get a list of moves for all pieces of either white or black.
+/// Get a list of legal moves for all pieces of this color.
+pub fn get_player_legal_moves(board: &Board, color: u8) -> Vec<Move> {
+    filter_illegal_moves(board, color, get_player_moves(board, color))
+}
+
+/// Get a list of moves for all pieces of this color.
 pub fn get_player_moves(board: &Board, color: u8) -> Vec<Move> {
     let mut moves = vec!();
     for r in 0..8 {
