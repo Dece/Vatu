@@ -3,12 +3,8 @@
 use std::fs;
 use std::io::{self, Write};
 
-use nom::IResult;
-use nom::branch::alt;
-use nom::character::is_space;
-use nom::bytes::complete::{tag, take_while};
-
-use crate::board;
+use crate::engine;
+use crate::notation;
 
 const VATU_NAME: &str = env!("CARGO_PKG_NAME");
 const VATU_AUTHORS: &str = env!("CARGO_PKG_AUTHORS");
@@ -16,7 +12,7 @@ const VATU_AUTHORS: &str = env!("CARGO_PKG_AUTHORS");
 /// Hold some values related to UCI comms.
 pub struct Uci {
     state: State,
-    board: board::Board,
+    engine: engine::Engine,
     logfile: Option<fs::File>,
 }
 
@@ -34,9 +30,16 @@ pub enum RemoteCmd {
     IsReady,
     UciNewGame,
     Stop,
-    Position(String),
+    Position(PositionArgs),
     Quit,
     Unknown(String),
+}
+
+/// Arguments for the position remote command.
+#[derive(Debug)]
+pub enum PositionArgs {
+    Startpos,
+    Fen(notation::Fen),
 }
 
 impl Uci {
@@ -44,12 +47,12 @@ impl Uci {
         loop {
             if let Some(cmd) = self.receive() {
                 match parse_command(&cmd) {
-                    Ok((_, cmd)) => {
+                    Some(cmd) => {
                         if !self.handle_command(&cmd) {
                             break
                         }
                     }
-                    _ => {
+                    None => {
                         self.log(format!("Unknown command: {}", cmd))
                     }
                 }
@@ -92,6 +95,7 @@ impl Uci {
             RemoteCmd::IsReady => if self.state == State::Ready { self.ready() },
             RemoteCmd::UciNewGame => if self.state == State::Ready { /* Nothing to do. */ },
             RemoteCmd::Stop => if self.state == State::Ready { /* Nothing to do. */ },
+            RemoteCmd::Position(p) => if self.state == State::Ready { self.position(p) }
             RemoteCmd::Quit => return false,
             _ => { self.log(format!("Unknown command: {:?}", cmd)); }
         }
@@ -106,17 +110,30 @@ impl Uci {
         self.state = State::Ready;
     }
 
+    /// Notify interface that it is ready.
     fn ready(&mut self) {
         self.send("readyok");
         self.state = State::Ready;
     }
+
+    fn position(&mut self, p_args: &PositionArgs) {
+        match p_args {
+            PositionArgs::Fen(fen) => {
+                self.engine.apply_fen(fen);
+            },
+            PositionArgs::Startpos => {
+                let fen = notation::parse_fen(notation::FEN_START).unwrap();
+                self.engine.apply_fen(&fen);
+            }
+        };
+    }
 }
 
-/// Start UCI I/O.
+/// Create a new Uci object, ready for I/O.
 pub fn start(output: Option<&str>) {
     let mut uci = Uci {
         state: State::Init,
-        board: board::new_empty(),
+        engine: engine::Engine::new(),
         logfile: None
     };
     if let Some(output) = output {
@@ -128,19 +145,29 @@ pub fn start(output: Option<&str>) {
     uci.listen();
 }
 
-fn take_non_space(i: &str) -> IResult<&str, &str> {
-    take_while(|c| c != ' ')(i)
-}
-
-fn parse_command(i: &str) -> IResult<&str, RemoteCmd> {
-    let (i, cmd) = take_non_space(i)?;
-    match cmd {
-        "uci" => Ok((i, RemoteCmd::Uci)),
-        "isready" => Ok((i, RemoteCmd::IsReady)),
-        "ucinewgame" => Ok((i, RemoteCmd::UciNewGame)),
-        "stop" => Ok((i, RemoteCmd::Stop)),
-        "position" => Ok((i, RemoteCmd::Position(i.trim().to_string()))),
-        "quit" => Ok((i, RemoteCmd::Quit)),
-        c => Ok((i, RemoteCmd::Unknown(c.to_string()))),
+fn parse_command(s: &str) -> Option<RemoteCmd> {
+    let fields: Vec<&str> = s.split_whitespace().collect();
+    match fields[0] {
+        "uci" => Some(RemoteCmd::Uci),
+        "isready" => Some(RemoteCmd::IsReady),
+        "ucinewgame" => Some(RemoteCmd::UciNewGame),
+        "stop" => Some(RemoteCmd::Stop),
+        "position" => {
+            match fields[1] {
+                // Subcommand "fen" is followed by a FEN string.
+                "fen" => {
+                    if let Some(fen) = notation::parse_fen_fields(fields[2..8].to_vec()) {
+                        Some(RemoteCmd::Position(PositionArgs::Fen(fen)))
+                    } else {
+                        None
+                    }
+                }
+                // Subcommand "startpos" assumes the board is a new game.
+                "startpos" => Some(RemoteCmd::Position(PositionArgs::Startpos)),
+                _ => None
+            }
+        }
+        "quit" => Some(RemoteCmd::Quit),
+        c => Some(RemoteCmd::Unknown(c.to_string())),
     }
 }

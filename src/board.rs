@@ -95,11 +95,7 @@ pub fn new_empty() -> Board {
     [SQ_E; 64]
 }
 
-pub const FEN_START: &str = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
-
-/// Generate a board from a FEN string.
-///
-/// This will only parse the first FEN field.
+/// Generate a board from a FEN placement string.
 pub fn new_from_fen(fen: &str) -> Board {
     let mut board = [SQ_E; 64];
     let mut f = 0;
@@ -216,6 +212,7 @@ pub fn draw(board: &Board) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::notation;
 
     #[test]
     fn test_opposite() {
@@ -235,7 +232,7 @@ mod tests {
     #[test]
     fn test_new_from_fen() {
         let b1 = new();
-        let b2 = new_from_fen(FEN_START);
+        let b2 = new_from_fen(notation::FEN_START);
         assert!(eq(&b1, &b2));
     }
 

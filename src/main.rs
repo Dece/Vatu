@@ -4,6 +4,8 @@ use clap::{App, AppSettings, Arg, ArgMatches, SubCommand};
 
 pub mod board;
 pub mod cli;
+pub mod engine;
+pub mod notation;
 pub mod rules;
 pub mod uci;
 
