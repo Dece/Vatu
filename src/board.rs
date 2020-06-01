@@ -75,6 +75,7 @@ pub fn pos(s: &str) -> Pos {
 /// defining the state of the square.
 pub type Board = [u8; 64];
 
+/// Generate the board of a new game.
 pub fn new() -> Board {
     [
         /*            1        2     3     4     5     6        7        8 */
@@ -89,8 +90,45 @@ pub fn new() -> Board {
     ]
 }
 
+/// Generate an empty board.
 pub fn new_empty() -> Board {
     [SQ_E; 64]
+}
+
+pub const FEN_START: &str = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
+
+/// Generate a board from a FEN string.
+///
+/// This will only parse the first FEN field.
+pub fn new_from_fen(fen: &str) -> Board {
+    let mut board = [SQ_E; 64];
+    let mut f = 0;
+    let mut r = 7;
+    for c in fen.chars() {
+        match c {
+            'r' => { set_square(&mut board, &(f, r), SQ_BL_R); f += 1 }
+            'n' => { set_square(&mut board, &(f, r), SQ_BL_N); f += 1 }
+            'b' => { set_square(&mut board, &(f, r), SQ_BL_B); f += 1 }
+            'q' => { set_square(&mut board, &(f, r), SQ_BL_Q); f += 1 }
+            'k' => { set_square(&mut board, &(f, r), SQ_BL_K); f += 1 }
+            'p' => { set_square(&mut board, &(f, r), SQ_BL_P); f += 1 }
+            'R' => { set_square(&mut board, &(f, r), SQ_WH_R); f += 1 }
+            'N' => { set_square(&mut board, &(f, r), SQ_WH_N); f += 1 }
+            'B' => { set_square(&mut board, &(f, r), SQ_WH_B); f += 1 }
+            'Q' => { set_square(&mut board, &(f, r), SQ_WH_Q); f += 1 }
+            'K' => { set_square(&mut board, &(f, r), SQ_WH_K); f += 1 }
+            'P' => { set_square(&mut board, &(f, r), SQ_WH_P); f += 1 }
+            '/' => { f = 0; r -= 1; }
+            d if d.is_digit(10) => { f += d.to_digit(10).unwrap() as i8 }
+            _ => break,
+        }
+    }
+    board
+}
+
+/// Return true of both boards are equal.
+pub fn eq(b1: &Board, b2: &Board) -> bool {
+    b1.iter().zip(b2.iter()).all(|(a, b)| a == b)
 }
 
 #[inline]
@@ -109,7 +147,9 @@ pub fn clear_square(board: &mut Board, coords: &Pos) {
 }
 
 #[inline]
-pub fn is_empty(board: &Board, coords: &Pos) -> bool { get_square(board, coords) == SQ_E }
+pub fn is_empty(board: &Board, coords: &Pos) -> bool {
+    get_square(board, coords) == SQ_E
+}
 
 /// Count number of pieces on board
 pub fn num_pieces(board: &Board) -> u8 {
@@ -190,6 +230,24 @@ mod tests {
         assert_eq!(pos("a8"), (0, 7));
         assert_eq!(pos("b1"), (1, 0));
         assert_eq!(pos("h8"), (7, 7));
+    }
+
+    #[test]
+    fn test_new_from_fen() {
+        let b1 = new();
+        let b2 = new_from_fen(FEN_START);
+        assert!(eq(&b1, &b2));
+    }
+
+    #[test]
+    fn test_eq() {
+        let mut b1 = new();
+        let b2 = new();
+        assert!(eq(&b1, &b2));
+        set_square(&mut b1, &pos("a1"), SQ_E);
+        assert!(!eq(&b1, &b2));
+        set_square(&mut b1, &pos("a1"), SQ_WH_R);
+        assert!(eq(&b1, &b2));
     }
 
     #[test]

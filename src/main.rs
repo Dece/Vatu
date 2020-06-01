@@ -5,6 +5,7 @@ use clap::{App, AppSettings, Arg, ArgMatches, SubCommand};
 pub mod board;
 pub mod cli;
 pub mod rules;
+pub mod uci;
 
 fn main() {
     let matches = App::new("Vatu")
@@ -15,10 +16,16 @@ fn main() {
                 .help("Color for the player")
                 .short("c").long("color").takes_value(true).required(false)
                 .possible_values(&["w", "white", "b", "black"])))
+        .subcommand(SubCommand::with_name("uci")
+            .about("Start engine in UCI mode")
+            .arg(Arg::with_name("output")
+                .help("Log file path")
+                .short("o").long("output").takes_value(true).required(false)))
         .get_matches();
 
     process::exit(match matches.subcommand() {
         ("cli", Some(a)) => cmd_cli(a),
+        ("uci", Some(a)) => cmd_uci(a),
         _ => 0,
     })
 }
@@ -37,5 +44,11 @@ fn cmd_cli(args: &ArgMatches) -> i32 {
     };
 
     cli::start_game(color);
+    0
+}
+
+fn cmd_uci(args: &ArgMatches) -> i32 {
+    let output = args.value_of("output");
+    uci::start(output);
     0
 }
