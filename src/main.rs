@@ -51,6 +51,6 @@ fn cmd_cli(args: &ArgMatches) -> i32 {
 
 fn cmd_uci(args: &ArgMatches) -> i32 {
     let output = args.value_of("output");
-    uci::start(output);
+    uci::Uci::start(output);
     0
 }

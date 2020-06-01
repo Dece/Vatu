@@ -2,7 +2,10 @@
 
 use std::fs;
 use std::io::{self, Write};
+use std::sync::mpsc;
+use std::thread;
 
+use crate::board;
 use crate::engine;
 use crate::notation;
 
@@ -11,9 +14,10 @@ const VATU_AUTHORS: &str = env!("CARGO_PKG_AUTHORS");
 
 /// Hold some values related to UCI comms.
 pub struct Uci {
-    state: State,
-    engine: engine::Engine,
-    logfile: Option<fs::File>,
+    state: State,                                           // Local UCI state for consistency.
+    cmd_channel: (mpsc::Sender<Cmd>, mpsc::Receiver<Cmd>),  // Channel of Cmd, handled by Uci.
+    engine_in: Option<mpsc::Sender<engine::Cmd>>,           // Sender for engine comms.
+    logfile: Option<fs::File>,                              // If some, write logs to it.
 }
 
 /// Internal UCI state.
@@ -21,41 +25,82 @@ pub struct Uci {
 pub enum State {
     Init,
     Ready,
+    Working,
 }
 
-/// UCI remote commands, received by engine.
+/// Uci MPSC commands.
 #[derive(Debug)]
-pub enum RemoteCmd {
+pub enum Cmd {
+    Stdin(String),        // String received from standard input.
+    Engine(engine::Cmd),  // Engine responses.
+}
+
+/// UCI commands.
+#[derive(Debug)]
+pub enum UciCmd {
     Uci,
     IsReady,
     UciNewGame,
     Stop,
-    Position(PositionArgs),
+    Position(Vec<PositionArgs>),
+    Go(Vec<GoArgs>),
     Quit,
     Unknown(String),
 }
 
 /// Arguments for the position remote command.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum PositionArgs {
     Startpos,
     Fen(notation::Fen),
 }
 
+/// Arguments for the go remote commands.
+#[derive(Debug)]
+pub enum GoArgs {
+    MoveTime(i32),
+    Infinite,
+}
+
 impl Uci {
+    /// Start a new UCI listening for standard input.
+    pub fn start(output: Option<&str>) {
+        // Create the UCI queue, both for standard IO and for engine communication.
+        let (uci_tx, uci_rx): (mpsc::Sender<Cmd>, mpsc::Receiver<Cmd>) = mpsc::channel();
+        thread::spawn(move || {
+            read_stdin(uci_tx);
+        });
+
+        let mut uci = Uci {
+            state: State::Init,
+            cmd_channel: (uci_tx, uci_rx),
+            engine_in: None,
+            logfile: None,
+        };
+        // Configure log output, either a file or stderr.
+        if let Some(output) = output {
+            match fs::File::create(output) {
+                Ok(f) => { uci.logfile = Some(f) }
+                Err(e) => { eprintln!("Could not open log file: {}", e) }
+            }
+        }
+
+        // Start listening for Cmds.
+        uci.listen();
+    }
+
     fn listen(&mut self) {
         loop {
-            if let Some(cmd) = self.receive() {
-                match parse_command(&cmd) {
-                    Some(cmd) => {
-                        if !self.handle_command(&cmd) {
-                            break
-                        }
-                    }
-                    None => {
-                        self.log(format!("Unknown command: {}", cmd))
+            match self.cmd_channel.1.recv() {
+                Ok(Cmd::Stdin(cmd)) => {
+                    if !self.handle_command(&parse_command(&cmd)) {
+                        break
                     }
                 }
+                Ok(Cmd::Engine(cmd)) => {
+                    // TODO
+                }
+                Err(e) => self.log(format!("Can't read commands: {}", e))
             }
         }
     }
@@ -63,9 +108,9 @@ impl Uci {
     fn log(&mut self, s: String) {
         match self.logfile.as_ref()  {
             Some(mut f) => {
-                f.write_all(s.as_bytes()).ok();
-                f.write_all("\n".as_bytes()).ok();
-                f.flush().ok();
+                f.write_all(s.as_bytes()).unwrap();
+                f.write_all("\n".as_bytes()).unwrap();
+                f.flush().unwrap();
             }
             None => {
                 eprintln!("{}", s);
@@ -82,92 +127,180 @@ impl Uci {
         }
     }
 
-    /// Send replies to the interface.
+    /// Send an UCI reply.
     fn send(&mut self, s: &str) {
-        self.log(format!("<<< {}", s));
+        self.log(format!("UCI <<< {}", s));
         println!("{}", s);
     }
 
-    /// Handle a remote command, return false if engine should stop listening.
-    fn handle_command(&mut self, cmd: &RemoteCmd) -> bool {
+    /// Handle an UCI command, return false if engine should stop listening.
+    fn handle_command(&mut self, cmd: &UciCmd) -> bool {
         match cmd {
-            RemoteCmd::Uci => if self.state == State::Init { self.identify(); },
-            RemoteCmd::IsReady => if self.state == State::Ready { self.ready() },
-            RemoteCmd::UciNewGame => if self.state == State::Ready { /* Nothing to do. */ },
-            RemoteCmd::Stop => if self.state == State::Ready { /* Nothing to do. */ },
-            RemoteCmd::Position(p) => if self.state == State::Ready { self.position(p) }
-            RemoteCmd::Quit => return false,
-            _ => { self.log(format!("Unknown command: {:?}", cmd)); }
+            UciCmd::Uci => if self.state == State::Init {
+                self.send_identities();
+                self.setup_engine();
+            },
+            UciCmd::IsReady => if self.state == State::Ready { self.send_ready() },
+            UciCmd::UciNewGame => if self.state == State::Ready { /* Nothing to do. */ },
+            UciCmd::Stop => if self.state == State::Ready { /* Nothing to do. */ },
+            UciCmd::Position(p) => if self.state == State::Ready {
+                let clone = engine::Cmd::UciPosition(p.to_vec());
+                self.engine_in.as_ref().unwrap().send(clone).unwrap();
+            },
+            UciCmd::Go(g) => if self.state == State::Ready { self.go(g) }
+            UciCmd::Quit => return false,
+            UciCmd::Unknown(c) => { self.log(format!("Unknown command: {}", c)); }
+            _ => {}
         }
         true
     }
 
     /// Send IDs to interface.
-    fn identify(&mut self) {
+    fn send_identities(&mut self) {
         self.send(&format!("id name {}", VATU_NAME));
         self.send(&format!("id author {}", VATU_AUTHORS));
         self.send("uciok");
+    }
+
+    fn setup_engine(&mut self) {
+        // Create the channel to send commands to the engine.
+        let (uci_out, engine_in): (mpsc::Sender<engine::Cmd>, mpsc::Receiver<engine::Cmd>) =
+            mpsc::channel();
+        self.engine_in = Some(uci_out);
+        // Pass the general Uci receiver to the engine as well.
+        let engine_out = self.cmd_channel.0;
+        thread::spawn(move || {
+            let mut engine = engine::Engine::new(engine::Mode::Uci(engine_in, engine_out));
+            engine.listen();
+        });
+        self.engine_in.as_ref().unwrap().send(engine::Cmd::Ping("test".to_string()));
         self.state = State::Ready;
     }
 
     /// Notify interface that it is ready.
-    fn ready(&mut self) {
+    fn send_ready(&mut self) {
         self.send("readyok");
-        self.state = State::Ready;
     }
 
-    fn position(&mut self, p_args: &PositionArgs) {
-        match p_args {
-            PositionArgs::Fen(fen) => {
-                self.engine.apply_fen(fen);
-            },
-            PositionArgs::Startpos => {
-                let fen = notation::parse_fen(notation::FEN_START).unwrap();
-                self.engine.apply_fen(&fen);
+    /// Set new positions.
+    fn position(&mut self, p_args: &Vec<PositionArgs>) {
+        for arg in p_args {
+            match arg {
+                PositionArgs::Fen(fen) => {
+                    // self.engine_in.unwrap().send(engine::Cmd::Uci(fen));
+                    // self.engine.apply_fen(&fen);
+                },
+                PositionArgs::Startpos => {
+                    let fen = notation::parse_fen(notation::FEN_START).unwrap();
+                    // self.engine.apply_fen(&fen);
+                }
             }
-        };
-    }
-}
-
-/// Create a new Uci object, ready for I/O.
-pub fn start(output: Option<&str>) {
-    let mut uci = Uci {
-        state: State::Init,
-        engine: engine::Engine::new(),
-        logfile: None
-    };
-    if let Some(output) = output {
-        match fs::File::create(output) {
-            Ok(f) => { uci.logfile = Some(f) }
-            Err(e) => { eprintln!("Could not open log file: {}", e) }
         }
     }
-    uci.listen();
+
+    /// Go!
+    fn go(&mut self, g_args: &Vec<GoArgs>) {
+        let mut movetime = -1;
+        for arg in g_args {
+            match arg {
+                GoArgs::MoveTime(ms) => movetime = *ms,
+                GoArgs::Infinite => movetime = -1,
+            }
+        }
+        // let channel: (mpsc::Sender<board::Move>, mpsc::Receiver<board::Move>) = mpsc::channel();
+        // self.state = State::Working;
+        // {
+        //     let tx = channel.0.clone();
+        //     let mut engine = self.engine.to_owned();
+        //     let work_t = thread::spawn(move || {
+        //         let best_move = engine.work(movetime);
+        //         tx.send(best_move).ok();
+        //         // self.send_bestmove(&best_move);
+        //     });
+        // }
+    }
+
+    /// Send best move.
+    fn send_bestmove(&mut self, m: &board::Move) {
+
+    }
 }
 
-fn parse_command(s: &str) -> Option<RemoteCmd> {
+/// Read lines over stdin, notifying over an MPSC channel.
+///
+/// As it is not trivial to add a timeout, or overly complicated to
+/// break the loop with a second channel, simply stop listening when
+/// the UCI "quit" command is received.
+pub fn read_stdin(tx: mpsc::Sender<Cmd>) {
+    let mut s = String::new();
+    loop {
+        match io::stdin().read_line(&mut s) {
+            Ok(_) => {
+                let s = s.trim();
+                tx.send(Cmd::Stdin(s.to_string()));
+                if s == "quit" {
+                    break;
+                }
+            }
+            Err(e) => {
+                eprintln!("Failed to read input: {:?}", e);
+            }
+        }
+    }
+}
+
+/// Parse an UCI command.
+fn parse_command(s: &str) -> UciCmd {
     let fields: Vec<&str> = s.split_whitespace().collect();
     match fields[0] {
-        "uci" => Some(RemoteCmd::Uci),
-        "isready" => Some(RemoteCmd::IsReady),
-        "ucinewgame" => Some(RemoteCmd::UciNewGame),
-        "stop" => Some(RemoteCmd::Stop),
-        "position" => {
-            match fields[1] {
-                // Subcommand "fen" is followed by a FEN string.
-                "fen" => {
-                    if let Some(fen) = notation::parse_fen_fields(fields[2..8].to_vec()) {
-                        Some(RemoteCmd::Position(PositionArgs::Fen(fen)))
-                    } else {
-                        None
-                    }
-                }
-                // Subcommand "startpos" assumes the board is a new game.
-                "startpos" => Some(RemoteCmd::Position(PositionArgs::Startpos)),
-                _ => None
+        "uci" => UciCmd::Uci,
+        "isready" => UciCmd::IsReady,
+        "ucinewgame" => UciCmd::UciNewGame,
+        "stop" => UciCmd::Stop,
+        "position" => parse_position_command(&fields[1..]),
+        "go" => parse_go_command(&fields[1..]),
+        "quit" => UciCmd::Quit,
+        c => UciCmd::Unknown(c.to_string()),
+    }
+}
+
+/// Parse an UCI "position" command.
+fn parse_position_command(fields: &[&str]) -> UciCmd {
+    // Currently we only match the first subcommand; moves are not supported.
+    let mut subcommands = vec!();
+    match fields[0] {
+        // Subcommand "fen" is followed by a FEN string.
+        "fen" => {
+            if let Some(fen) = notation::parse_fen_fields(&fields[1..7]) {
+                subcommands.push(PositionArgs::Fen(fen))
+            } else {
+                return UciCmd::Unknown(format!("Bad format for position fen"))
             }
         }
-        "quit" => Some(RemoteCmd::Quit),
-        c => Some(RemoteCmd::Unknown(c.to_string())),
+        // Subcommand "startpos" assumes the board is a new game.
+        "startpos" => subcommands.push(PositionArgs::Startpos),
+        f => return UciCmd::Unknown(format!("Unknown position subcommand: {}", f)),
     }
+    UciCmd::Position(subcommands)
+}
+
+/// Parse an UCI "go" command.
+fn parse_go_command(fields: &[&str]) -> UciCmd {
+    let num_fields = fields.len();
+    let i = 0;
+    let mut subcommands = vec!();
+    loop {
+        if i == num_fields {
+            break
+        }
+        match fields[i] {
+            "movetime" => {
+                let ms = fields[i + 1].parse::<i32>().unwrap();
+                subcommands.push(GoArgs::MoveTime(ms))
+            }
+            "infinite" => subcommands.push(GoArgs::Infinite),
+            f => return UciCmd::Unknown(format!("Unknown go subcommand: {}", f)),
+        }
+    }
+    UciCmd::Go(subcommands)
 }

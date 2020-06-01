@@ -15,10 +15,10 @@ pub struct Fen {
 
 pub fn parse_fen(i: &str) -> Option<Fen> {
     let fields: Vec<&str> = i.split_whitespace().collect();
-    parse_fen_fields(fields)
+    parse_fen_fields(&fields)
 }
 
-pub fn parse_fen_fields(fields: Vec<&str>) -> Option<Fen> {
+pub fn parse_fen_fields(fields: &[&str]) -> Option<Fen> {
     if fields.len() < 6 {
         return None
     }
