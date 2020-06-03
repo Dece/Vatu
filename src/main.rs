@@ -20,9 +20,9 @@ fn main() {
                 .possible_values(&["w", "white", "b", "black"])))
         .subcommand(SubCommand::with_name("uci")
             .about("Start engine in UCI mode")
-            .arg(Arg::with_name("output")
-                .help("Log file path")
-                .short("o").long("output").takes_value(true).required(false)))
+            .arg(Arg::with_name("log_file")
+                .help("Log file path (default is stderr)")
+                .long("log-file").takes_value(true).required(false)))
         .get_matches();
 
     process::exit(match matches.subcommand() {

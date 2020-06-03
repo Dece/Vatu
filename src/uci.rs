@@ -66,14 +66,15 @@ impl Uci {
     /// Start a new UCI listening for standard input.
     pub fn start(output: Option<&str>) {
         // Create the UCI queue, both for standard IO and for engine communication.
-        let (uci_tx, uci_rx): (mpsc::Sender<Cmd>, mpsc::Receiver<Cmd>) = mpsc::channel();
+        let (uci_s, uci_r): (mpsc::Sender<Cmd>, mpsc::Receiver<Cmd>) = mpsc::channel();
+        let stdin_tx = uci_s.clone();
         thread::spawn(move || {
-            read_stdin(uci_tx);
+            Uci::read_stdin(stdin_tx);
         });
 
         let mut uci = Uci {
             state: State::Init,
-            cmd_channel: (uci_tx, uci_rx),
+            cmd_channel: (uci_s, uci_r),
             engine_in: None,
             logfile: None,
         };
@@ -93,12 +94,13 @@ impl Uci {
         loop {
             match self.cmd_channel.1.recv() {
                 Ok(Cmd::Stdin(cmd)) => {
+                    self.log(format!("UCI >>> {}", cmd));
                     if !self.handle_command(&parse_command(&cmd)) {
                         break
                     }
                 }
                 Ok(Cmd::Engine(cmd)) => {
-                    // TODO
+                    self.handle_engine_command(&cmd);
                 }
                 Err(e) => self.log(format!("Can't read commands: {}", e))
             }
@@ -118,12 +120,29 @@ impl Uci {
         }
     }
 
-    /// Read a command from the interface.
-    fn receive(&mut self) -> Option<String> {
+    /// Read lines over stdin, notifying over an MPSC channel.
+    ///
+    /// As it is not trivial to add a timeout, or overly complicated
+    /// to break the loop with a second channel, simply stop listening
+    /// when the UCI "quit" command is received.
+    ///
+    /// This is not an Uci method as it does not need to act on the
+    /// instance itself.
+    pub fn read_stdin(tx: mpsc::Sender<Cmd>) {
         let mut s = String::new();
-        match io::stdin().read_line(&mut s) {
-            Ok(_) => { self.log(format!(">>> {}", s.trim_end())); Some(s.trim().to_string()) }
-            Err(e) => { self.log(format!("Failed to read input: {:?}", e)); None }
+        loop {
+            match io::stdin().read_line(&mut s) {
+                Ok(_) => {
+                    let s = s.trim();
+                    tx.send(Cmd::Stdin(s.to_string())).unwrap();
+                    if s == "quit" {
+                        break;
+                    }
+                }
+                Err(e) => {
+                    eprintln!("Failed to read input: {:?}", e);
+                }
+            }
         }
     }
 
@@ -133,7 +152,7 @@ impl Uci {
         println!("{}", s);
     }
 
-    /// Handle an UCI command, return false if engine should stop listening.
+    /// Handle an UCI command, return false if it should stop listening.
     fn handle_command(&mut self, cmd: &UciCmd) -> bool {
         match cmd {
             UciCmd::Uci => if self.state == State::Init {
@@ -150,9 +169,21 @@ impl Uci {
             UciCmd::Go(g) => if self.state == State::Ready { self.go(g) }
             UciCmd::Quit => return false,
             UciCmd::Unknown(c) => { self.log(format!("Unknown command: {}", c)); }
-            _ => {}
         }
         true
+    }
+
+    /// Handle an engine command.
+    fn handle_engine_command(&mut self, cmd: &engine::Cmd) {
+        match cmd {
+            engine::Cmd::UciChannel(s) => {
+                self.engine_in = Some(s.to_owned());
+                // Send a ping to the engine to ensure communication.
+                let ping = engine::Cmd::Ping("test".to_string());
+                self.engine_in.as_ref().unwrap().send(ping).unwrap();
+            }
+            _ => {}
+        }
     }
 
     /// Send IDs to interface.
@@ -163,17 +194,11 @@ impl Uci {
     }
 
     fn setup_engine(&mut self) {
-        // Create the channel to send commands to the engine.
-        let (uci_out, engine_in): (mpsc::Sender<engine::Cmd>, mpsc::Receiver<engine::Cmd>) =
-            mpsc::channel();
-        self.engine_in = Some(uci_out);
-        // Pass the general Uci receiver to the engine as well.
-        let engine_out = self.cmd_channel.0;
+        let uci_s = self.cmd_channel.0.clone();
         thread::spawn(move || {
-            let mut engine = engine::Engine::new(engine::Mode::Uci(engine_in, engine_out));
-            engine.listen();
+            let mut engine = engine::Engine::new();
+            engine.setup_uci(uci_s);
         });
-        self.engine_in.as_ref().unwrap().send(engine::Cmd::Ping("test".to_string()));
         self.state = State::Ready;
     }
 
@@ -226,28 +251,6 @@ impl Uci {
     }
 }
 
-/// Read lines over stdin, notifying over an MPSC channel.
-///
-/// As it is not trivial to add a timeout, or overly complicated to
-/// break the loop with a second channel, simply stop listening when
-/// the UCI "quit" command is received.
-pub fn read_stdin(tx: mpsc::Sender<Cmd>) {
-    let mut s = String::new();
-    loop {
-        match io::stdin().read_line(&mut s) {
-            Ok(_) => {
-                let s = s.trim();
-                tx.send(Cmd::Stdin(s.to_string()));
-                if s == "quit" {
-                    break;
-                }
-            }
-            Err(e) => {
-                eprintln!("Failed to read input: {:?}", e);
-            }
-        }
-    }
-}
 
 /// Parse an UCI command.
 fn parse_command(s: &str) -> UciCmd {

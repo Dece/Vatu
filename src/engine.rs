@@ -23,17 +23,18 @@ pub enum Mode {
     // No mode, sit here and do nothing.
     No,
     // UCI mode: listen to Cmds, send Uci::Cmd::Engine commands.
-    Uci(mpsc::Receiver<Cmd>, mpsc::Sender<uci::Cmd>),
+    Uci(mpsc::Sender<uci::Cmd>, mpsc::Receiver<Cmd>),
 }
 
 #[derive(Debug)]
 pub enum Cmd {
     // Commands that can be received by the engine.
-    Ping(String),  // Test if the engine is responding.
+    Ping(String),                         // Test if the engine is responding.
+    UciChannel(mpsc::Sender<Cmd>),        // Provide a sender to UCI to start receiving commands.
     UciPosition(Vec<uci::PositionArgs>),  // UCI "position" command.
 
     // Commands that can be sent by the engine.
-    Pong(String),  // Answer a Ping command with the same payload.
+
 }
 
 pub const CASTLING_WH_K: u8 = 0b00000001;
@@ -43,7 +44,7 @@ pub const CASTLING_BL_Q: u8 = 0b00001000;
 pub const CASTLING_MASK: u8 = 0b00001111;
 
 impl Engine {
-    pub fn new(mode: Mode) -> Engine {
+    pub fn new() -> Engine {
         Engine {
             board: board::new_empty(),
             color: board::SQ_WH,
@@ -51,8 +52,17 @@ impl Engine {
             en_passant: None,
             halfmove: 0,
             fullmove: 1,
-            mode,
+            mode: Mode::No,
         }
+    }
+
+    /// Setup engine for UCI communication.
+    pub fn setup_uci(&mut self, uci_s: mpsc::Sender<uci::Cmd>) {
+        // Create a channel to receive commands from Uci.
+        let (engine_s, engine_r) = mpsc::channel();
+        uci_s.send(uci::Cmd::Engine(Cmd::UciChannel(engine_s))).unwrap();
+        self.mode = Mode::Uci(uci_s, engine_r);
+        self.listen();
     }
 
     /// Listen for incoming commands.
@@ -61,10 +71,13 @@ impl Engine {
     /// In no modes, stop listening immediately.
     pub fn listen(&mut self) {
         loop {
-            match self.mode {
+            match &self.mode {
                 Mode::No => break,
-                Mode::Uci(rx, tx) => {
-                    self.recv_uci(rx, tx);
+                Mode::Uci(tx, rx) => {
+                    match rx.recv() {
+                        Ok(c) => eprintln!("Unhandled command: {:?}", c),
+                        Err(e) => eprintln!("Engine recv failure: {}", e),
+                    }
                 }
             }
         }
@@ -130,14 +143,5 @@ impl Engine {
         let mut rng = rand::thread_rng();
         let best_move = moves.iter().choose(&mut rng).unwrap();
         *best_move
-    }
-
-    /// Receive a command from Uci.
-    pub fn recv_uci(&mut self, rx: mpsc::Receiver<Cmd>, tx: mpsc::Sender<uci::Cmd>) {
-        match rx.recv() {
-            Ok(Cmd::Ping(s)) => tx.send(uci::Cmd::Engine(Cmd::Pong(s))).unwrap(),
-            Ok(c) => eprintln!("Unhandled command: {:?}", c),
-            Err(e) => eprintln!("Engine recv failure: {}", e),
-        }
     }
 }
