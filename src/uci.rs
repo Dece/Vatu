@@ -12,7 +12,11 @@ use crate::notation;
 const VATU_NAME: &str = env!("CARGO_PKG_NAME");
 const VATU_AUTHORS: &str = env!("CARGO_PKG_AUTHORS");
 
-/// Hold some values related to UCI comms.
+// ************************************
+// UCI manager
+
+/// UCI manager with means to send/receive commands and communicate
+/// with the engine.
 pub struct Uci {
     state: State,                                           // Local UCI state for consistency.
     cmd_channel: (mpsc::Sender<Cmd>, mpsc::Receiver<Cmd>),  // Channel of Cmd, handled by Uci.
@@ -56,7 +60,7 @@ pub enum PositionArgs {
 }
 
 /// Arguments for the go remote commands.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum GoArgs {
     MoveTime(i32),
     Infinite,
@@ -143,6 +147,7 @@ impl Uci {
                     eprintln!("Failed to read input: {:?}", e);
                 }
             }
+            s.clear();
         }
     }
 
@@ -162,11 +167,14 @@ impl Uci {
             UciCmd::IsReady => if self.state == State::Ready { self.send_ready() },
             UciCmd::UciNewGame => if self.state == State::Ready { /* Nothing to do. */ },
             UciCmd::Stop => if self.state == State::Ready { /* Nothing to do. */ },
-            UciCmd::Position(p) => if self.state == State::Ready {
-                let clone = engine::Cmd::UciPosition(p.to_vec());
-                self.engine_in.as_ref().unwrap().send(clone).unwrap();
+            UciCmd::Position(args) => if self.state == State::Ready {
+                let args = engine::Cmd::UciPosition(args.to_vec());
+                self.engine_in.as_ref().unwrap().send(args).unwrap();
             },
-            UciCmd::Go(g) => if self.state == State::Ready { self.go(g) }
+            UciCmd::Go(args) => if self.state == State::Ready {
+                let args = engine::Cmd::UciGo(args.to_vec());
+                self.engine_in.as_ref().unwrap().send(args).unwrap();
+            }
             UciCmd::Quit => return false,
             UciCmd::Unknown(c) => { self.log(format!("Unknown command: {}", c)); }
         }
@@ -175,12 +183,13 @@ impl Uci {
 
     /// Handle an engine command.
     fn handle_engine_command(&mut self, cmd: &engine::Cmd) {
+        self.log(format!("ENG >>> {:?}", cmd));
         match cmd {
             engine::Cmd::UciChannel(s) => {
                 self.engine_in = Some(s.to_owned());
-                // Send a ping to the engine to ensure communication.
-                let ping = engine::Cmd::Ping("test".to_string());
-                self.engine_in.as_ref().unwrap().send(ping).unwrap();
+            }
+            engine::Cmd::BestMove(m) => {
+                self.send_bestmove(m);
             }
             _ => {}
         }
@@ -207,53 +216,20 @@ impl Uci {
         self.send("readyok");
     }
 
-    /// Set new positions.
-    fn position(&mut self, p_args: &Vec<PositionArgs>) {
-        for arg in p_args {
-            match arg {
-                PositionArgs::Fen(fen) => {
-                    // self.engine_in.unwrap().send(engine::Cmd::Uci(fen));
-                    // self.engine.apply_fen(&fen);
-                },
-                PositionArgs::Startpos => {
-                    let fen = notation::parse_fen(notation::FEN_START).unwrap();
-                    // self.engine.apply_fen(&fen);
-                }
-            }
-        }
-    }
-
-    /// Go!
-    fn go(&mut self, g_args: &Vec<GoArgs>) {
-        let mut movetime = -1;
-        for arg in g_args {
-            match arg {
-                GoArgs::MoveTime(ms) => movetime = *ms,
-                GoArgs::Infinite => movetime = -1,
-            }
-        }
-        // let channel: (mpsc::Sender<board::Move>, mpsc::Receiver<board::Move>) = mpsc::channel();
-        // self.state = State::Working;
-        // {
-        //     let tx = channel.0.clone();
-        //     let mut engine = self.engine.to_owned();
-        //     let work_t = thread::spawn(move || {
-        //         let best_move = engine.work(movetime);
-        //         tx.send(best_move).ok();
-        //         // self.send_bestmove(&best_move);
-        //     });
-        // }
-    }
-
     /// Send best move.
     fn send_bestmove(&mut self, m: &board::Move) {
-
+        self.send(&format!("bestmove {:?}", m));  // TODO notation conversion
     }
 }
 
+// ************************************
+// UCI command parsers
 
 /// Parse an UCI command.
 fn parse_command(s: &str) -> UciCmd {
+    if s.len() == 0 {
+        return UciCmd::Unknown("Empty command.".to_string());
+    }
     let fields: Vec<&str> = s.split_whitespace().collect();
     match fields[0] {
         "uci" => UciCmd::Uci,
@@ -290,20 +266,19 @@ fn parse_position_command(fields: &[&str]) -> UciCmd {
 /// Parse an UCI "go" command.
 fn parse_go_command(fields: &[&str]) -> UciCmd {
     let num_fields = fields.len();
-    let i = 0;
+    let mut i = 0;
     let mut subcommands = vec!();
-    loop {
-        if i == num_fields {
-            break
-        }
+    while i < num_fields {
         match fields[i] {
             "movetime" => {
-                let ms = fields[i + 1].parse::<i32>().unwrap();
-                subcommands.push(GoArgs::MoveTime(ms))
+                i += 1;
+                let ms = fields[i].parse::<i32>().unwrap();
+                subcommands.push(GoArgs::MoveTime(ms));
             }
             "infinite" => subcommands.push(GoArgs::Infinite),
             f => return UciCmd::Unknown(format!("Unknown go subcommand: {}", f)),
         }
+        i += 1;
     }
     UciCmd::Go(subcommands)
 }

@@ -17,6 +17,7 @@ pub struct Engine {
     halfmove: i32,                   // Current half moves.
     fullmove: i32,                   // Current full moves.
     mode: Mode,
+    listening: bool,
 }
 
 pub enum Mode {
@@ -29,12 +30,12 @@ pub enum Mode {
 #[derive(Debug)]
 pub enum Cmd {
     // Commands that can be received by the engine.
-    Ping(String),                         // Test if the engine is responding.
     UciChannel(mpsc::Sender<Cmd>),        // Provide a sender to UCI to start receiving commands.
     UciPosition(Vec<uci::PositionArgs>),  // UCI "position" command.
+    UciGo(Vec<uci::GoArgs>),              // UCI "go" command.
 
     // Commands that can be sent by the engine.
-
+    BestMove(board::Move),
 }
 
 pub const CASTLING_WH_K: u8 = 0b00000001;
@@ -43,6 +44,7 @@ pub const CASTLING_BL_K: u8 = 0b00000100;
 pub const CASTLING_BL_Q: u8 = 0b00001000;
 pub const CASTLING_MASK: u8 = 0b00001111;
 
+/// General engine implementation.
 impl Engine {
     pub fn new() -> Engine {
         Engine {
@@ -53,16 +55,8 @@ impl Engine {
             halfmove: 0,
             fullmove: 1,
             mode: Mode::No,
+            listening: false,
         }
-    }
-
-    /// Setup engine for UCI communication.
-    pub fn setup_uci(&mut self, uci_s: mpsc::Sender<uci::Cmd>) {
-        // Create a channel to receive commands from Uci.
-        let (engine_s, engine_r) = mpsc::channel();
-        uci_s.send(uci::Cmd::Engine(Cmd::UciChannel(engine_s))).unwrap();
-        self.mode = Mode::Uci(uci_s, engine_r);
-        self.listen();
     }
 
     /// Listen for incoming commands.
@@ -70,23 +64,33 @@ impl Engine {
     /// In UCI mode, read incoming Cmds over the MPSC channel.
     /// In no modes, stop listening immediately.
     pub fn listen(&mut self) {
-        loop {
+        self.listening = true;
+        while self.listening {
             match &self.mode {
-                Mode::No => break,
-                Mode::Uci(tx, rx) => {
+                Mode::Uci(_, rx) => {
                     match rx.recv() {
-                        Ok(c) => eprintln!("Unhandled command: {:?}", c),
+                        Ok(c) => self.handle_uci_command(&c),
                         Err(e) => eprintln!("Engine recv failure: {}", e),
                     }
                 }
+                _ => break,
             }
+        }
+    }
+
+    fn reply(&mut self, cmd: Cmd) {
+        match &self.mode {
+            Mode::Uci(tx, _) => {
+                tx.send(uci::Cmd::Engine(cmd)).unwrap();
+            }
+            _ => {}
         }
     }
 
     /// Apply a FEN string to the engine state, replacing it.
     ///
     /// For speed purposes, it assumes values are always valid.
-    pub fn apply_fen(&mut self, fen: &notation::Fen) {
+    fn apply_fen(&mut self, fen: &notation::Fen) {
         self.set_fen_placement(&fen.placement);
         self.set_fen_color(&fen.color);
         self.set_fen_castling(&fen.castling);
@@ -144,4 +148,54 @@ impl Engine {
         let best_move = moves.iter().choose(&mut rng).unwrap();
         *best_move
     }
+}
+
+/// UCI commands management.
+impl Engine {
+    /// Setup engine for UCI communication.
+    pub fn setup_uci(&mut self, uci_s: mpsc::Sender<uci::Cmd>) {
+        // Create a channel to receive commands from Uci.
+        let (engine_s, engine_r) = mpsc::channel();
+        uci_s.send(uci::Cmd::Engine(Cmd::UciChannel(engine_s))).unwrap();
+        self.mode = Mode::Uci(uci_s, engine_r);
+        self.listen();
+    }
+
+    /// Handle UCI commands passed as engine Cmds.
+    fn handle_uci_command(&mut self, cmd: &Cmd) {
+        match cmd {
+            Cmd::UciPosition(args) => self.uci_position(&args),
+            Cmd::UciGo(args) => self.uci_go(&args),
+            _ => eprintln!("Not an UCI command: {:?}", cmd),
+        }
+    }
+
+    /// Update board state from a "position" command's args.
+    fn uci_position(&mut self, p_args: &Vec<uci::PositionArgs>) {
+        for arg in p_args {
+            match arg {
+                uci::PositionArgs::Fen(fen) => {
+                    self.apply_fen(&fen);
+                },
+                uci::PositionArgs::Startpos => {
+                    let fen = notation::parse_fen(notation::FEN_START).unwrap();
+                    self.apply_fen(&fen);
+                }
+            }
+        }
+    }
+
+    /// Start working using parameters passed with a "go" command.
+    fn uci_go(&mut self, g_args: &Vec<uci::GoArgs>) {
+        let mut movetime = -1;
+        for arg in g_args {
+            match arg {
+                uci::GoArgs::MoveTime(ms) => movetime = *ms,
+                uci::GoArgs::Infinite => movetime = -1,
+            }
+        }
+        let best_move = self.work(movetime);
+        self.reply(Cmd::BestMove(best_move));
+    }
+
 }
