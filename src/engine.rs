@@ -1,6 +1,8 @@
 //! Vatu engine.
 
 use std::sync::mpsc;
+use std::thread;
+use std::time;
 
 use rand::seq::IteratorRandom;
 
@@ -35,7 +37,7 @@ pub enum Cmd {
     UciGo(Vec<uci::GoArgs>),              // UCI "go" command.
 
     // Commands that can be sent by the engine.
-    BestMove(board::Move),
+    BestMove(Option<board::Move>),
 }
 
 pub const CASTLING_WH_K: u8 = 0b00000001;
@@ -138,15 +140,25 @@ impl Engine {
         self.fullmove = fullmove.parse::<i32>().ok().unwrap();
     }
 
+    fn apply_moves(&mut self, moves: &Vec<board::Move>) {
+        moves.iter().for_each(|m| self.apply_move(m));
+    }
+
+    fn apply_move(&mut self, m: &board::Move) {
+        board::apply_into(&mut self.board, m);
+    }
+
     /// Start working on board, returning the best move found.
     ///
     /// Stop working after `movetime` ms, or go on forever if it's -1.
-    pub fn work(&mut self, _movetime: i32) -> board::Move {
+    pub fn work(&mut self, movetime: i32) -> Option<board::Move> {
         // Stupid engine! Return a random move.
         let moves = rules::get_player_legal_moves(&self.board, self.color);
         let mut rng = rand::thread_rng();
-        let best_move = moves.iter().choose(&mut rng).unwrap();
-        *best_move
+        let best_move = moves.iter().choose(&mut rng).and_then(|m| Some(*m));
+        // board::draw(&self.board);
+        thread::sleep(time::Duration::from_millis(movetime as u64));
+        best_move
     }
 }
 
@@ -180,6 +192,9 @@ impl Engine {
                 uci::PositionArgs::Startpos => {
                     let fen = notation::parse_fen(notation::FEN_START).unwrap();
                     self.apply_fen(&fen);
+                },
+                uci::PositionArgs::Moves(moves) => {
+                    self.apply_moves(&moves);
                 }
             }
         }

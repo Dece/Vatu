@@ -50,7 +50,7 @@ fn cmd_cli(args: &ArgMatches) -> i32 {
 }
 
 fn cmd_uci(args: &ArgMatches) -> i32 {
-    let output = args.value_of("output");
+    let output = args.value_of("log_file");
     uci::Uci::start(output);
     0
 }

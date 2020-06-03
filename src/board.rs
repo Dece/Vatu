@@ -69,6 +69,14 @@ pub fn pos(s: &str) -> Pos {
     ((chars[0] - 0x61) as i8, (chars[1] - 0x31) as i8)
 }
 
+/// Return string coordinates from Pos.
+pub fn pos_string(p: &Pos) -> String {
+    let mut bytes = [0u8; 2];
+    bytes[0] = (p.0 + 0x61) as u8;
+    bytes[1] = (p.1 + 0x31) as u8;
+    String::from_utf8_lossy(&bytes).to_string()
+}
+
 /// Bitboard representation of a chess board.
 ///
 /// 64 squares, from A1, A2 to H7, H8. A square is an u8, with bits
@@ -227,6 +235,14 @@ mod tests {
         assert_eq!(pos("a8"), (0, 7));
         assert_eq!(pos("b1"), (1, 0));
         assert_eq!(pos("h8"), (7, 7));
+    }
+
+    #[test]
+    fn test_pos_string() {
+        assert_eq!(pos_string(&(0, 0)), "a1");
+        assert_eq!(pos_string(&(0, 1)), "a2");
+        assert_eq!(pos_string(&(0, 7)), "a8");
+        assert_eq!(pos_string(&(7, 7)), "h8");
     }
 
     #[test]

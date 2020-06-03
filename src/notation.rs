@@ -1,5 +1,20 @@
 //! Functions using various notations.
 
+use crate::board;
+
+pub const NULL_MOVE: &str = "0000";
+
+pub fn move_to_string(m: &board::Move) -> String {
+    let mut move_string = String::new();
+    move_string.push_str(&board::pos_string(&m.0));
+    move_string.push_str(&board::pos_string(&m.1));
+    move_string
+}
+
+pub fn parse_move(m_str: &str) -> board::Move {
+    (board::pos(&m_str[0..2]), board::pos(&m_str[2..4]))
+}
+
 pub const FEN_START: &str = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
 
 /// FEN notation for positions, split into fields.
@@ -35,6 +50,17 @@ pub fn parse_fen_fields(fields: &[&str]) -> Option<Fen> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_move_to_string() {
+        assert_eq!(move_to_string(&((0, 0), (3, 3))), "a1d4");
+        assert_eq!(move_to_string(&((7, 7), (0, 7))), "h8a8");
+    }
+
+    #[test]
+    fn test_parse_move() {
+        assert_eq!(parse_move("a1d4"), ((0, 0), (3, 3)));
+    }
 
     #[test]
     fn test_parse_fen() {

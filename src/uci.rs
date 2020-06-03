@@ -57,6 +57,7 @@ pub enum UciCmd {
 pub enum PositionArgs {
     Startpos,
     Fen(notation::Fen),
+    Moves(Vec<board::Move>),
 }
 
 /// Arguments for the go remote commands.
@@ -112,11 +113,9 @@ impl Uci {
     }
 
     fn log(&mut self, s: String) {
-        match self.logfile.as_ref()  {
-            Some(mut f) => {
-                f.write_all(s.as_bytes()).unwrap();
-                f.write_all("\n".as_bytes()).unwrap();
-                f.flush().unwrap();
+        match &mut self.logfile {
+            Some(f) => {
+                writeln!(f, "{}", s).unwrap();
             }
             None => {
                 eprintln!("{}", s);
@@ -135,6 +134,7 @@ impl Uci {
     pub fn read_stdin(tx: mpsc::Sender<Cmd>) {
         let mut s = String::new();
         loop {
+            s.clear();
             match io::stdin().read_line(&mut s) {
                 Ok(_) => {
                     let s = s.trim();
@@ -147,7 +147,6 @@ impl Uci {
                     eprintln!("Failed to read input: {:?}", e);
                 }
             }
-            s.clear();
         }
     }
 
@@ -217,8 +216,12 @@ impl Uci {
     }
 
     /// Send best move.
-    fn send_bestmove(&mut self, m: &board::Move) {
-        self.send(&format!("bestmove {:?}", m));  // TODO notation conversion
+    fn send_bestmove(&mut self, m: &Option<board::Move>) {
+        let move_str = match m {
+            Some(m) => notation::move_to_string(m),
+            None => notation::NULL_MOVE.to_string(),
+        };
+        self.send(&format!("bestmove {}", move_str));
     }
 }
 
@@ -245,20 +248,34 @@ fn parse_command(s: &str) -> UciCmd {
 
 /// Parse an UCI "position" command.
 fn parse_position_command(fields: &[&str]) -> UciCmd {
-    // Currently we only match the first subcommand; moves are not supported.
+    let num_fields = fields.len();
+    let mut i = 0;
     let mut subcommands = vec!();
-    match fields[0] {
-        // Subcommand "fen" is followed by a FEN string.
-        "fen" => {
-            if let Some(fen) = notation::parse_fen_fields(&fields[1..7]) {
-                subcommands.push(PositionArgs::Fen(fen))
-            } else {
-                return UciCmd::Unknown(format!("Bad format for position fen"))
+    while i < num_fields {
+        match fields[i] {
+            // Subcommand "fen" is followed by a FEN string.
+            "fen" => {
+                if let Some(fen) = notation::parse_fen_fields(&fields[i + 1 .. i + 7]) {
+                    subcommands.push(PositionArgs::Fen(fen))
+                } else {
+                    return UciCmd::Unknown(format!("Bad format for position fen"))
+                }
+                i += 6;
             }
+            // Subcommand "startpos" assumes the board is a new game.
+            "startpos" => subcommands.push(PositionArgs::Startpos),
+            // Subcommand "moves" is followed by moves until the end of the command.
+            "moves" => {
+                let mut moves = vec!();
+                while i + 1 < num_fields {
+                    moves.push(notation::parse_move(fields[i + 1]));
+                    i += 1;
+                }
+                subcommands.push(PositionArgs::Moves(moves));
+            },
+            f => return UciCmd::Unknown(format!("Unknown position subcommand: {}", f)),
         }
-        // Subcommand "startpos" assumes the board is a new game.
-        "startpos" => subcommands.push(PositionArgs::Startpos),
-        f => return UciCmd::Unknown(format!("Unknown position subcommand: {}", f)),
+        i += 1;
     }
     UciCmd::Position(subcommands)
 }
