@@ -48,7 +48,7 @@ fn get_player_move() -> board::Move {
         let from = if let Some(s) = get_input("From: ") { board::pos(&s) } else { continue };
         let to = if let Some(s) = get_input("To: ") { board::pos(&s) } else { continue };
         if board::is_valid_pos(from) && board::is_valid_pos(to) {
-            return (from, to)
+            return (from, to, None)  // TODO this does not handle promotion.
         }
         println!("Bad input.");
     }

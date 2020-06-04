@@ -8,11 +8,31 @@ pub fn move_to_string(m: &board::Move) -> String {
     let mut move_string = String::new();
     move_string.push_str(&board::pos_string(&m.0));
     move_string.push_str(&board::pos_string(&m.1));
+    if let Some(prom) = m.2 {
+        move_string.push(match prom {
+            board::SQ_Q => 'q',
+            board::SQ_B => 'b',
+            board::SQ_N => 'n',
+            board::SQ_R => 'r',
+            _ => panic!("What are you doing? Promote to a legal piece.")
+        });
+    }
     move_string
 }
 
 pub fn parse_move(m_str: &str) -> board::Move {
-    (board::pos(&m_str[0..2]), board::pos(&m_str[2..4]))
+    let prom = if m_str.len() == 5 {
+        Some(match m_str.as_bytes()[4] {
+            b'b' => board::SQ_B,
+            b'n' => board::SQ_N,
+            b'r' => board::SQ_R,
+            b'q' => board::SQ_Q,
+            _ => panic!("What is the opponent doing? This is illegal, I'm out."),
+        })
+    } else {
+        None
+    };
+    (board::pos(&m_str[0..2]), board::pos(&m_str[2..4]), prom)
 }
 
 pub const FEN_START: &str = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
@@ -53,13 +73,17 @@ mod tests {
 
     #[test]
     fn test_move_to_string() {
-        assert_eq!(move_to_string(&((0, 0), (3, 3))), "a1d4");
-        assert_eq!(move_to_string(&((7, 7), (0, 7))), "h8a8");
+        assert_eq!(move_to_string(&((0, 0), (3, 3), None)), "a1d4");
+        assert_eq!(move_to_string(&((7, 7), (0, 7), None)), "h8a8");
+        assert_eq!(move_to_string(&((7, 6), (7, 7), Some(board::SQ_Q))), "h7h8q");
+        assert_eq!(move_to_string(&((7, 6), (7, 7), Some(board::SQ_N))), "h7h8n");
     }
 
     #[test]
     fn test_parse_move() {
-        assert_eq!(parse_move("a1d4"), ((0, 0), (3, 3)));
+        assert_eq!(parse_move("a1d4"), ((0, 0), (3, 3), None));
+        assert_eq!(parse_move("a7a8q"), ((0, 6), (0, 7), Some(board::SQ_Q)));
+        assert_eq!(parse_move("a7a8r"), ((0, 6), (0, 7), Some(board::SQ_R)));
     }
 
     #[test]

@@ -180,8 +180,8 @@ pub fn find_king(board: &Board, color: u8) -> Pos {
     (0, 0)
 }
 
-/// A movement, with before/after positions.
-pub type Move = (Pos, Pos);
+/// A movement, with before/after positions and optional promotion.
+pub type Move = (Pos, Pos, Option<u8>);
 
 /// Apply a move `m` to a copy of `board`.
 pub fn apply(board: &Board, m: &Move) -> Board {
@@ -307,12 +307,12 @@ mod tests {
         set_square(&mut b, &pos("d4"), SQ_WH_N);
         set_square(&mut b, &pos("f4"), SQ_BL_N);
         // Move white knight in a position attacked by black knight.
-        apply_into(&mut b, &((pos("d4"), pos("e6"))));
+        apply_into(&mut b, &(pos("d4"), pos("e6"), None));
         assert_eq!(get_square(&b, &pos("d4")), SQ_E);
         assert_eq!(get_square(&b, &pos("e6")), SQ_WH_N);
         assert_eq!(num_pieces(&b), 2);
         // Sack it with black knight
-        apply_into(&mut b, &((pos("f4"), pos("e6"))));
+        apply_into(&mut b, &(pos("f4"), pos("e6"), None));
         assert_eq!(get_square(&b, &pos("e6")), SQ_BL_N);
         assert_eq!(num_pieces(&b), 1);
     }

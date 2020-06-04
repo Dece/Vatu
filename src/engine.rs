@@ -289,7 +289,7 @@ fn analyze(
     let moves = rules::get_player_legal_moves(&state.board, state.color);
     let mut rng = rand::thread_rng();
     let best_move = moves.iter().choose(&mut rng).and_then(|m| Some(*m));
-    thread::sleep(time::Duration::from_millis(1000u64));
+    thread::sleep(time::Duration::from_millis(300u64));
     tx.send(Cmd::TmpBestMove(best_move)).unwrap();
 
     // thread::sleep(time::Duration::from_secs(1));

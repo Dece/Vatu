@@ -40,21 +40,28 @@ pub fn get_piece_moves(board: &Board, at: &Pos) -> Vec<Move> {
 fn get_pawn_moves(board: &Board, at: &Pos, piece: u8) -> Vec<Move> {
     let (f, r) = *at;
     let mut moves = vec!();
-    let movement: i8 = if is_white(piece) { 1 } else { -1 };
+    // Direction: positive for white, negative for black.
+    let dir: i8 = if is_white(piece) { 1 } else { -1 };
     // Check 1 or 2 square forward.
     let move_len = if (is_white(piece) && r == 1) || (is_black(piece) && r == 6) { 2 } else { 1 };
     for i in 1..=move_len {
-        let forward_r = r + movement * i;
-        if movement > 0 && forward_r > POS_MAX {
+        let forward_r = r + dir * i;
+        if dir > 0 && forward_r > POS_MAX {
             return moves
         }
-        if movement < 0 && forward_r < POS_MIN {
+        if dir < 0 && forward_r < POS_MIN {
             return moves
         }
         let forward: Pos = (f, forward_r);
         // If forward square is empty (and we are not jumping over an occupied square), add it.
-        if is_empty(board, &forward) && (i == 1 || is_empty(board, &(f, forward_r - 1))) {
-            moves.push((*at, forward))
+        if is_empty(board, &forward) && (i == 1 || is_empty(board, &(f, forward_r - dir))) {
+            // Pawns that get to the opposite rank automatically promote as queens.
+            let prom = if (dir > 0 && forward_r == POS_MAX) || (dir < 0 && forward_r == POS_MIN) {
+                Some(SQ_Q)
+            } else {
+                None
+            };
+            moves.push((*at, forward, prom))
         }
         // Check diagonals for pieces to attack.
         if i == 1 {
@@ -92,7 +99,7 @@ fn get_bishop_moves(board: &Board, at: &Pos, piece: u8) -> Vec<Move> {
                 continue
             }
             if is_empty(board, &p) {
-                moves.push((*at, p));
+                moves.push((*at, p, None));
             } else {
                 if let Some(m) = move_on_enemy(piece, at, get_square(board, &p), &p) {
                     moves.push(m);
@@ -113,7 +120,7 @@ fn get_knight_moves(board: &Board, at: &Pos, piece: u8) -> Vec<Move> {
             continue
         }
         if is_empty(board, &p) {
-            moves.push((*at, p));
+            moves.push((*at, p, None));
         } else if let Some(m) = move_on_enemy(piece, at, get_square(board, &p), &p) {
             moves.push(m);
         }
@@ -135,7 +142,7 @@ fn get_rook_moves(board: &Board, at: &Pos, piece: u8) -> Vec<Move> {
                 continue
             }
             if is_empty(board, &p) {
-                moves.push((*at, p));
+                moves.push((*at, p, None));
             } else {
                 if let Some(m) = move_on_enemy(piece, at, get_square(board, &p), &p) {
                     moves.push(m);
@@ -164,7 +171,7 @@ fn get_king_moves(board: &Board, at: &Pos, piece: u8) -> Vec<Move> {
             continue
         }
         if is_empty(board, &p) {
-            moves.push((*at, p));
+            moves.push((*at, p, None));
         } else if let Some(m) = move_on_enemy(piece, at, get_square(board, &p), &p) {
             moves.push(m);
         }
@@ -177,7 +184,16 @@ fn get_king_moves(board: &Board, at: &Pos, piece: u8) -> Vec<Move> {
 fn move_on_enemy(piece1: u8, pos1: &Pos, piece2: u8, pos2: &Pos) -> Option<Move> {
     let color1 = get_color(piece1);
     if is_color(piece2, opposite(color1)) {
-        Some((*pos1, *pos2))
+        // Automatic queen promotion for pawns moving to the opposite rank.
+        let prom = if
+            is_piece(piece1, SQ_P) &&
+            ((is_white(piece1) && pos2.1 == POS_MAX) || (is_black(piece1) && pos2.1 == POS_MIN))
+        {
+            Some(SQ_Q)
+        } else {
+            None
+        };
+        Some((*pos1, *pos2, prom))
     } else {
         None
     }
@@ -231,20 +247,20 @@ mod tests {
         // Check that a pawn (here white queen's pawn) can move forward if the road is free.
         set_square(&mut b, &pos("d3"), SQ_WH_P);
         let moves = get_piece_moves(&b, &pos("d3"));
-        assert!(moves.len() == 1 && moves.contains( &(pos("d3"), pos("d4")) ));
+        assert!(moves.len() == 1 && moves.contains( &(pos("d3"), pos("d4"), None) ));
 
         // Check that a pawn (here white king's pawn) can move 2 square forward on first move.
         set_square(&mut b, &pos("e2"), SQ_WH_P);
         let moves = get_piece_moves(&b, &pos("e2"));
         assert_eq!(moves.len(), 2);
-        assert!(moves.contains( &(pos("e2"), pos("e3")) ));
-        assert!(moves.contains( &(pos("e2"), pos("e4")) ));
+        assert!(moves.contains( &(pos("e2"), pos("e3"), None) ));
+        assert!(moves.contains( &(pos("e2"), pos("e4"), None) ));
 
         // Check that a pawn cannot move forward if a piece is blocking its path.
         // 1. black pawn 2 square forward; only 1 square forward available from start pos.
         set_square(&mut b, &pos("e4"), SQ_BL_P);
         let moves = get_piece_moves(&b, &pos("e2"));
-        assert!(moves.len() == 1 && moves.contains( &(pos("e2"), pos("e3")) ));
+        assert!(moves.len() == 1 && moves.contains( &(pos("e2"), pos("e3"), None) ));
         // 2. black pawn 1 square forward; no square available.
         set_square(&mut b, &pos("e3"), SQ_BL_P);
         let moves = get_piece_moves(&b, &pos("e2"));
@@ -257,12 +273,18 @@ mod tests {
         // Check that a pawn can take a piece diagonally.
         set_square(&mut b, &pos("f3"), SQ_BL_P);
         let moves = get_piece_moves(&b, &pos("e2"));
-        assert!(moves.len() == 1 && moves.contains( &(pos("e2"), pos("f3")) ));
+        assert!(moves.len() == 1 && moves.contains( &(pos("e2"), pos("f3"), None) ));
         set_square(&mut b, &pos("d3"), SQ_BL_P);
         let moves = get_piece_moves(&b, &pos("e2"));
         assert_eq!(moves.len(), 2);
-        assert!(moves.contains( &(pos("e2"), pos("f3")) ));
-        assert!(moves.contains( &(pos("e2"), pos("d3")) ));
+        assert!(moves.contains( &(pos("e2"), pos("f3"), None) ));
+        assert!(moves.contains( &(pos("e2"), pos("d3"), None) ));
+
+        // Check that a pawn moving to the last rank leads to queen promotion.
+        // 1. by simply moving forward.
+        set_square(&mut b, &pos("a7"), SQ_WH_P);
+        let moves = get_piece_moves(&b, &pos("a7"));
+        assert!(moves.len() == 1 && moves.contains( &(pos("a7"), pos("a8"), Some(SQ_Q)) ));
     }
 
     #[test]
@@ -274,22 +296,22 @@ mod tests {
         let moves = get_piece_moves(&b, &pos("d4"));
         assert_eq!(moves.len(), 13);
         // Going top-right.
-        assert!(moves.contains( &(pos("d4"), pos("e5")) ));
-        assert!(moves.contains( &(pos("d4"), pos("f6")) ));
-        assert!(moves.contains( &(pos("d4"), pos("g7")) ));
-        assert!(moves.contains( &(pos("d4"), pos("h8")) ));
+        assert!(moves.contains( &(pos("d4"), pos("e5"), None) ));
+        assert!(moves.contains( &(pos("d4"), pos("f6"), None) ));
+        assert!(moves.contains( &(pos("d4"), pos("g7"), None) ));
+        assert!(moves.contains( &(pos("d4"), pos("h8"), None) ));
         // Going bottom-right.
-        assert!(moves.contains( &(pos("d4"), pos("e3")) ));
-        assert!(moves.contains( &(pos("d4"), pos("f2")) ));
-        assert!(moves.contains( &(pos("d4"), pos("g1")) ));
+        assert!(moves.contains( &(pos("d4"), pos("e3"), None) ));
+        assert!(moves.contains( &(pos("d4"), pos("f2"), None) ));
+        assert!(moves.contains( &(pos("d4"), pos("g1"), None) ));
         // Going bottom-left.
-        assert!(moves.contains( &(pos("d4"), pos("c3")) ));
-        assert!(moves.contains( &(pos("d4"), pos("b2")) ));
-        assert!(moves.contains( &(pos("d4"), pos("a1")) ));
+        assert!(moves.contains( &(pos("d4"), pos("c3"), None) ));
+        assert!(moves.contains( &(pos("d4"), pos("b2"), None) ));
+        assert!(moves.contains( &(pos("d4"), pos("a1"), None) ));
         // Going top-left.
-        assert!(moves.contains( &(pos("d4"), pos("c5")) ));
-        assert!(moves.contains( &(pos("d4"), pos("b6")) ));
-        assert!(moves.contains( &(pos("d4"), pos("a7")) ));
+        assert!(moves.contains( &(pos("d4"), pos("c5"), None) ));
+        assert!(moves.contains( &(pos("d4"), pos("b6"), None) ));
+        assert!(moves.contains( &(pos("d4"), pos("a7"), None) ));
 
         // When blocking sight to one square with friendly piece, lose 2 moves.
         set_square(&mut b, &pos("b2"), SQ_WH_P);
@@ -375,7 +397,7 @@ mod tests {
         set_square(&mut b, &pos("d6"), SQ_BL_R);
         assert!(is_attacked(&b, &pos("d4")));
         // Move the rook on another file, no more attack.
-        apply_into(&mut b, &(pos("d6"), pos("e6")));
+        apply_into(&mut b, &(pos("d6"), pos("e6"), None));
         assert!(!is_attacked(&b, &pos("d4")));
     }
 }
