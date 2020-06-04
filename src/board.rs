@@ -196,7 +196,7 @@ pub fn apply_into(board: &mut Board, m: &Move) {
     clear_square(board, &m.0)
 }
 
-pub fn draw(board: &Board) {
+pub fn draw(board: &Board, f: &mut dyn std::io::Write) {
     for r in (0..8).rev() {
         let mut rank = String::with_capacity(8);
         for f in 0..8 {
@@ -212,9 +212,9 @@ pub fn draw(board: &Board) {
             let piece = if is_color(s, SQ_WH) { piece.to_ascii_uppercase() } else { piece };
             rank.push(piece);
         }
-        println!("{} {}", r + 1, rank);
+        writeln!(f, "{} {}", r + 1, rank).unwrap();
     }
-    println!("  abcdefgh");
+    writeln!(f, "  abcdefgh").unwrap();
 }
 
 #[cfg(test)]

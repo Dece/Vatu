@@ -52,7 +52,8 @@ fn get_pawn_moves(board: &Board, at: &Pos, piece: u8) -> Vec<Move> {
             return moves
         }
         let forward: Pos = (f, forward_r);
-        if is_empty(board, &forward) {
+        // If forward square is empty (and we are not jumping over an occupied square), add it.
+        if is_empty(board, &forward) && (i == 1 || is_empty(board, &(f, forward_r - 1))) {
             moves.push((*at, forward))
         }
         // Check diagonals for pieces to attack.
@@ -240,12 +241,16 @@ mod tests {
         assert!(moves.contains( &(pos("e2"), pos("e4")) ));
 
         // Check that a pawn cannot move forward if a piece is blocking its path.
-        // 1. black pawn 2 square forward:
+        // 1. black pawn 2 square forward; only 1 square forward available from start pos.
         set_square(&mut b, &pos("e4"), SQ_BL_P);
         let moves = get_piece_moves(&b, &pos("e2"));
         assert!(moves.len() == 1 && moves.contains( &(pos("e2"), pos("e3")) ));
-        // 2. black pawn 1 square forward:
+        // 2. black pawn 1 square forward; no square available.
         set_square(&mut b, &pos("e3"), SQ_BL_P);
+        let moves = get_piece_moves(&b, &pos("e2"));
+        assert_eq!(moves.len(), 0);
+        // 3. remove the e4 black pawn; the white pawn should not be able to jump above e3 pawn.
+        clear_square(&mut b, &pos("e4"));
         let moves = get_piece_moves(&b, &pos("e2"));
         assert_eq!(moves.len(), 0);
 

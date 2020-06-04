@@ -16,7 +16,7 @@ pub fn start_game(player_color: u8) {
     let mut b = board::new();
     let mut turn = board::SQ_WH;
     loop {
-        board::draw(&b);
+        board::draw(&b, &mut io::stdout());
         println!("");
         let m = if turn == player_color {
             println!("Player turn.");

@@ -63,6 +63,16 @@ pub enum PositionArgs {
 /// Arguments for the go remote commands.
 #[derive(Debug, Clone)]
 pub enum GoArgs {
+    SearchMoves(Vec<board::Move>),
+    Ponder,
+    WTime(i32),
+    BTime(i32),
+    WInc(i32),
+    BInc(i32),
+    MovesToGo(i32),
+    Depth(i32),
+    Nodes(i32),
+    Mate(i32),
     MoveTime(i32),
     Infinite,
 }
@@ -165,7 +175,6 @@ impl Uci {
             },
             UciCmd::IsReady => if self.state == State::Ready { self.send_ready() },
             UciCmd::UciNewGame => if self.state == State::Ready { /* Nothing to do. */ },
-            UciCmd::Stop => if self.state == State::Ready { /* Nothing to do. */ },
             UciCmd::Position(args) => if self.state == State::Ready {
                 let args = engine::Cmd::UciPosition(args.to_vec());
                 self.engine_in.as_ref().unwrap().send(args).unwrap();
@@ -173,7 +182,11 @@ impl Uci {
             UciCmd::Go(args) => if self.state == State::Ready {
                 let args = engine::Cmd::UciGo(args.to_vec());
                 self.engine_in.as_ref().unwrap().send(args).unwrap();
+                self.state = State::Working;
             }
+            UciCmd::Stop => if self.state == State::Working {
+                self.engine_in.as_ref().unwrap().send(engine::Cmd::Stop).unwrap();
+            },
             UciCmd::Quit => return false,
             UciCmd::Unknown(c) => { self.log(format!("Unknown command: {}", c)); }
         }
@@ -188,6 +201,7 @@ impl Uci {
                 self.engine_in = Some(s.to_owned());
             }
             engine::Cmd::BestMove(m) => {
+                self.state = State::Ready;
                 self.send_bestmove(m);
             }
             _ => {}
@@ -287,13 +301,44 @@ fn parse_go_command(fields: &[&str]) -> UciCmd {
     let mut subcommands = vec!();
     while i < num_fields {
         match fields[i] {
+            "infinite" => subcommands.push(GoArgs::Infinite),
             "movetime" => {
                 i += 1;
-                let ms = fields[i].parse::<i32>().unwrap();
-                subcommands.push(GoArgs::MoveTime(ms));
+                subcommands.push(GoArgs::MoveTime(fields[i].parse::<i32>().unwrap()));
             }
-            "infinite" => subcommands.push(GoArgs::Infinite),
-            f => return UciCmd::Unknown(format!("Unknown go subcommand: {}", f)),
+            "wtime" => {
+                i += 1;
+                subcommands.push(GoArgs::WTime(fields[i].parse::<i32>().unwrap()));
+            },
+            "btime" => {
+                i += 1;
+                subcommands.push(GoArgs::BTime(fields[i].parse::<i32>().unwrap()));
+            }
+            "winc" => {
+                i += 1;
+                subcommands.push(GoArgs::WInc(fields[i].parse::<i32>().unwrap()));
+            }
+            "binc" => {
+                i += 1;
+                subcommands.push(GoArgs::BInc(fields[i].parse::<i32>().unwrap()));
+            }
+            "movestogo" => {
+                i += 1;
+                subcommands.push(GoArgs::MovesToGo(fields[i].parse::<i32>().unwrap()));
+            }
+            "depth" => {
+                i += 1;
+                subcommands.push(GoArgs::Depth(fields[i].parse::<i32>().unwrap()));
+            }
+            "nodes" => {
+                i += 1;
+                subcommands.push(GoArgs::Nodes(fields[i].parse::<i32>().unwrap()));
+            }
+            "mate" => {
+                i += 1;
+                subcommands.push(GoArgs::Mate(fields[i].parse::<i32>().unwrap()));
+            }
+            f => eprintln!("Unknown go subcommand: {}", f),
         }
         i += 1;
     }
