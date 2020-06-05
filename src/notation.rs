@@ -1,11 +1,12 @@
 //! Functions using various notations.
 
 use crate::board;
+use crate::rules;
 
 pub const NULL_MOVE: &str = "0000";
 
 /// Create a string containing the UCI algebraic notation of this move.
-pub fn move_to_string(m: &board::Move) -> String {
+pub fn move_to_string(m: &rules::Move) -> String {
     let mut move_string = String::new();
     move_string.push_str(&board::pos_string(&m.0));
     move_string.push_str(&board::pos_string(&m.1));
@@ -21,8 +22,8 @@ pub fn move_to_string(m: &board::Move) -> String {
     move_string
 }
 
-/// Parse an UCI move algebraic notation string to a board::Move.
-pub fn parse_move(m_str: &str) -> board::Move {
+/// Parse an UCI move algebraic notation string to a rules::Move.
+pub fn parse_move(m_str: &str) -> rules::Move {
     let prom = if m_str.len() == 5 {
         Some(match m_str.as_bytes()[4] {
             b'b' => board::SQ_B,
@@ -38,7 +39,7 @@ pub fn parse_move(m_str: &str) -> board::Move {
 }
 
 /// Create a space-separated string of moves. Used for debugging.
-pub fn move_list_to_string(moves: &Vec<board::Move>) -> String {
+pub fn move_list_to_string(moves: &Vec<rules::Move>) -> String {
     moves.iter().map(|m| move_to_string(m)).collect::<Vec<_>>().join(" ")
 }
 

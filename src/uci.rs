@@ -5,9 +5,9 @@ use std::io::{self, Write};
 use std::sync::mpsc;
 use std::thread;
 
-use crate::board;
 use crate::engine;
 use crate::notation;
+use crate::rules;
 
 const VATU_NAME: &str = env!("CARGO_PKG_NAME");
 const VATU_AUTHORS: &str = env!("CARGO_PKG_AUTHORS");
@@ -57,13 +57,13 @@ pub enum UciCmd {
 pub enum PositionArgs {
     Startpos,
     Fen(notation::Fen),
-    Moves(Vec<board::Move>),
+    Moves(Vec<rules::Move>),
 }
 
 /// Arguments for the go remote commands.
 #[derive(Debug, Clone)]
 pub enum GoArgs {
-    SearchMoves(Vec<board::Move>),
+    SearchMoves(Vec<rules::Move>),
     Ponder,
     WTime(i32),
     BTime(i32),
@@ -249,7 +249,7 @@ impl Uci {
     }
 
     /// Send best move.
-    fn send_bestmove(&mut self, m: &Option<board::Move>) {
+    fn send_bestmove(&mut self, m: &Option<rules::Move>) {
         let move_str = match m {
             Some(m) => notation::move_to_string(m),
             None => notation::NULL_MOVE.to_string(),

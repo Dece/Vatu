@@ -14,7 +14,7 @@ pub struct Engine {
     /// Debug mode, log some data.
     debug: bool,
     /// Current game state, starting point of further analysis.
-    state: GameState,
+    node: Node,
     /// Communication mode.
     mode: Mode,
     /// If true, the engine is currently listening to incoming cmds.
@@ -23,28 +23,33 @@ pub struct Engine {
     working: Arc<atomic::AtomicBool>,
 }
 
-/// Representation of a game state that can cloned to analysis workers.
-///
-/// It does not include various parameters such as clocks so that they
-/// can be passed separately using `WorkArgs`.
+/// Analysis node: a board along with the game state and some stats.
 #[derive(Clone)]
-struct GameState {
+struct Node {
+    /// Board for this node.
     board: board::Board,
-    stats: (board::BoardStats, board::BoardStats),  // white and black pieces stats.
-    color: u8,
-    castling: u8,
-    en_passant: Option<board::Pos>,
-    halfmove: i32,
-    fullmove: i32,
+    /// Game state.
+    game_state: rules::GameState,
+    /// White and black pieces stats; have to be recomputed if board changes.
+    stats: (board::BoardStats, board::BoardStats),  // white and black pieces stats
 }
 
-impl std::fmt::Debug for GameState {
+impl Node {
+    fn new() -> Node {
+        Node {
+            board: board::new_empty(),
+            game_state: rules::GameState::new(),
+            stats: (board::BoardStats::new(), board::BoardStats::new()),
+        }
+    }
+}
+
+impl std::fmt::Debug for Node {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         write!(
             f,
-            "GameState {{ board: [...], stats: {:?}, color: {:08b}, castling: {:08b}, \
-             en_passant: {:?}, halfmove: {}, fullmove: {} }}",
-            self.stats, self.color, self.castling, self.en_passant, self.halfmove, self.fullmove
+            "Node {{ board: [...], game_state: {:?}, stats: {:?} }}",
+            self.game_state, self.stats
         )
     }
 }
@@ -70,7 +75,7 @@ pub enum Cmd {
     UciPosition(Vec<uci::PositionArgs>),  // UCI "position" command.
     UciGo(Vec<uci::GoArgs>),              // UCI "go" command.
     Stop,                                 // Stop working ASAP.
-    TmpBestMove(Option<board::Move>),  // Send best move found by analysis worker (TEMPORARY).
+    TmpBestMove(Option<rules::Move>),  // Send best move found by analysis worker (TEMPORARY).
     WorkerInfo(Vec<Info>),                // Informations from a worker.
 
     // Commands that can be sent by the engine.
@@ -80,7 +85,7 @@ pub enum Cmd {
     /// the message to be forwarded to whatever can log.
     Log(String),
     /// Report found best move.
-    BestMove(Option<board::Move>),
+    BestMove(Option<rules::Move>),
     /// Report ongoing analysis information.
     Info(Vec<Info>),
 }
@@ -98,7 +103,7 @@ struct WorkArgs {
 /// Information to be transmitted back to whatever is listening.
 #[derive(Debug, Clone)]
 pub enum Info {
-    CurrentMove(board::Move),
+    CurrentMove(rules::Move),
 }
 
 /// General engine implementation.
@@ -106,15 +111,7 @@ impl Engine {
     pub fn new() -> Engine {
         Engine {
             debug: true,
-            state: GameState {
-                board: board::new_empty(),
-                stats: (board::BoardStats::new(), board::BoardStats::new()),
-                color: board::SQ_WH,
-                castling: rules::CASTLING_MASK,
-                en_passant: None,
-                halfmove: 0,
-                fullmove: 1,
-            },
+            node: Node::new(),
             mode: Mode::No,
             listening: false,
             working: Arc::new(atomic::AtomicBool::new(false)),
@@ -168,59 +165,41 @@ impl Engine {
     ///
     /// For speed purposes, it assumes values are always valid.
     fn apply_fen(&mut self, fen: &notation::Fen) {
-        self.set_fen_placement(&fen.placement);
-        self.set_fen_color(&fen.color);
-        self.set_fen_castling(&fen.castling);
-        self.set_fen_en_passant(&fen.en_passant);
-        self.set_fen_halfmove(&fen.halfmove);
-        self.set_fen_fullmove(&fen.fullmove);
-    }
-
-    fn set_fen_placement(&mut self, placement: &str) {
-        self.state.board = board::new_from_fen(placement);
-    }
-
-    fn set_fen_color(&mut self, color: &str) {
-        match color.chars().next().unwrap() {
-            'w' => self.state.color = board::SQ_WH,
-            'b' => self.state.color = board::SQ_BL,
+        // Placement.
+        self.node.board = board::new_from_fen(&fen.placement);
+        // Color.
+        match fen.color.chars().next().unwrap() {
+            'w' => self.node.game_state.color = board::SQ_WH,
+            'b' => self.node.game_state.color = board::SQ_BL,
             _ => {}
-        }
-    }
-
-    fn set_fen_castling(&mut self, castling: &str) {
-        for c in castling.chars() {
+        };
+        // Castling.
+        for c in fen.castling.chars() {
             match c {
-                'K' => self.state.castling |= rules::CASTLING_WH_K,
-                'Q' => self.state.castling |= rules::CASTLING_WH_Q,
-                'k' => self.state.castling |= rules::CASTLING_BL_K,
-                'q' => self.state.castling |= rules::CASTLING_BL_Q,
+                'K' => self.node.game_state.castling |= rules::CASTLING_WH_K,
+                'Q' => self.node.game_state.castling |= rules::CASTLING_WH_Q,
+                'k' => self.node.game_state.castling |= rules::CASTLING_BL_K,
+                'q' => self.node.game_state.castling |= rules::CASTLING_BL_Q,
                 _ => {}
             }
         }
-    }
-
-    fn set_fen_en_passant(&mut self, en_passant: &str) {
-        self.state.en_passant = match en_passant {
+        // En passant.
+        self.node.game_state.en_passant = match fen.en_passant.as_ref() {
             "-" => None,
             p => Some(board::pos(p)),
         };
+        // Half moves.
+        self.node.game_state.halfmove = fen.halfmove.parse::<i32>().ok().unwrap();
+        // Full moves.
+        self.node.game_state.fullmove = fen.fullmove.parse::<i32>().ok().unwrap();
     }
 
-    fn set_fen_halfmove(&mut self, halfmove: &str) {
-        self.state.halfmove = halfmove.parse::<i32>().ok().unwrap();
-    }
-
-    fn set_fen_fullmove(&mut self, fullmove: &str) {
-        self.state.fullmove = fullmove.parse::<i32>().ok().unwrap();
-    }
-
-    fn apply_moves(&mut self, moves: &Vec<board::Move>) {
+    fn apply_moves(&mut self, moves: &Vec<rules::Move>) {
         moves.iter().for_each(|m| self.apply_move(m));
     }
 
-    fn apply_move(&mut self, m: &board::Move) {
-        board::apply_into(&mut self.state.board, m);
+    fn apply_move(&mut self, m: &rules::Move) {
+        rules::apply_move_to(&mut self.node.board, &mut self.node.game_state, m);
     }
 
     /// Start working on board, returning the best move found.
@@ -228,17 +207,17 @@ impl Engine {
     /// Stop working after `movetime` ms, or go on forever if it's -1.
     fn work(&mut self, args: &WorkArgs) {
         if self.debug {
-            self.reply(Cmd::Log(format!("Current evaluation: {}", evaluate(&self.state.stats))));
+            self.reply(Cmd::Log(format!("Current evaluation: {}", evaluate(&self.node.stats))));
         }
 
         self.working.store(true, atomic::Ordering::Relaxed);
-        let state = self.state.clone();
+        let node = self.node.clone();
         let args = args.clone();
         let working = self.working.clone();
         let tx = match &self.mode { Mode::Uci(_, _, tx) => tx.clone(), _ => return };
         let debug = self.debug;
         thread::spawn(move || {
-            analyze(&state, &args, working, tx, debug);
+            analyze(&node, &args, working, tx, debug);
         });
     }
 
@@ -271,15 +250,10 @@ impl Engine {
                 },
                 uci::PositionArgs::Moves(moves) => {
                     self.apply_moves(&moves);
-                    self.state.color = if moves.len() % 2 == 0 {
-                        board::SQ_WH
-                    } else {
-                        board::SQ_BL
-                    };
                 }
             }
         }
-        board::compute_stats_into(&self.state.board, &mut self.state.stats);
+        board::compute_stats_into(&self.node.board, &mut self.node.stats);
     }
 
     /// Start working using parameters passed with a "go" command.
@@ -307,41 +281,43 @@ impl Engine {
 }
 
 fn analyze(
-    state: &GameState,
+    node: &Node,
     _args: &WorkArgs,
-    wip: Arc<atomic::AtomicBool>,
+    working: Arc<atomic::AtomicBool>,
     tx: mpsc::Sender<Cmd>,
     debug: bool,
 ) {
-    if !wip.load(atomic::Ordering::Relaxed) {
+    if !working.load(atomic::Ordering::Relaxed) {
         return;
     }
-
-    let moves = rules::get_player_legal_moves(&state.board, state.color);
     if debug {
-        let state_str = format!("Current state: {:?}", state);
+        let state_str = format!("Analysing node: {:?}", node);
         tx.send(Cmd::Log(state_str)).unwrap();
         let mut s = vec!();
-        board::draw(&state.board, &mut s);
+        board::draw(&node.board, &mut s);
         let draw_str = String::from_utf8_lossy(&s).to_string();
         tx.send(Cmd::Log(draw_str)).unwrap();
+    }
+
+    let moves = rules::get_player_legal_moves(&node.board, &node.game_state);
+    if debug {
         let moves_str = format!("Legal moves: {}", notation::move_list_to_string(&moves));
         tx.send(Cmd::Log(moves_str)).unwrap();
     }
 
-    let mut best_e = if board::is_white(state.color) { -999.0 } else { 999.0 };
+    let mut best_e = if board::is_white(node.game_state.color) { -999.0 } else { 999.0 };
     let mut best_move = None;
     for m in moves {
-        // tx.send(Cmd::WorkerInfo(vec!(Info::CurrentMove(m)))).unwrap();
-        let mut board = state.board.clone();
-        board::apply_into(&mut board, &m);
+        let mut board = node.board.clone();
+        let mut game_state = node.game_state.clone();
+        rules::apply_move_to(&mut board, &mut game_state, &m);
         let stats = board::compute_stats(&board);
         let e = evaluate(&stats);
         tx.send(Cmd::Log(format!("Move {} eval {}", notation::move_to_string(&m), e))).unwrap();
 
         if
-            (board::is_white(state.color) && e > best_e) ||
-            (board::is_black(state.color) && e < best_e)
+            (board::is_white(game_state.color) && e > best_e) ||
+            (board::is_black(game_state.color) && e < best_e)
         {
             best_e = e;
             best_move = Some(m.clone());
@@ -363,20 +339,19 @@ fn analyze(
 
 fn evaluate(stats: &(board::BoardStats, board::BoardStats)) -> f32 {
     let (ws, bs) = stats;
-    (
-        200.0 * (ws.num_kings - bs.num_kings) as f32
-        + 9.0 * (ws.num_queens - bs.num_queens) as f32
-        + 5.0 * (ws.num_rooks - bs.num_rooks) as f32
-        + 3.0 * (ws.num_bishops - bs.num_bishops) as f32
-        + 3.0 * (ws.num_knights - bs.num_knights) as f32
-        + (ws.num_pawns - bs.num_pawns) as f32
-        + 0.5 * (  // FIXME
-            ws.num_doubled_pawns - bs.num_doubled_pawns +
-            ws.num_isolated_pawns - bs.num_isolated_pawns +
-            ws.num_backward_pawns - bs.num_backward_pawns
-        ) as f32
-        + 0.1 * (ws.mobility - bs.mobility) as f32
-    )
+
+    200.0 * (ws.num_kings - bs.num_kings) as f32
+    + 9.0 * (ws.num_queens - bs.num_queens) as f32
+    + 5.0 * (ws.num_rooks - bs.num_rooks) as f32
+    + 3.0 * (ws.num_bishops - bs.num_bishops) as f32
+    + 3.0 * (ws.num_knights - bs.num_knights) as f32
+    + (ws.num_pawns - bs.num_pawns) as f32
+    + 0.5 * (  // FIXME
+        ws.num_doubled_pawns - bs.num_doubled_pawns +
+        ws.num_isolated_pawns - bs.num_isolated_pawns +
+        ws.num_backward_pawns - bs.num_backward_pawns
+    ) as f32
+    + 0.1 * (ws.mobility - bs.mobility) as f32
 }
 
 #[cfg(test)]
@@ -385,12 +360,16 @@ mod tests {
 
     #[test]
     fn test_evaluate() {
-        let mut b = board::new();
-        let stats = board::compute_stats(&b);
+        let mut node = Node::new();
+        let stats = board::compute_stats(&node.board);
         assert_eq!(evaluate(&stats), 0.0);
 
-        board::apply_into(&mut b, &(notation::parse_move("d2d4")));
-        let stats = board::compute_stats(&b);
+        rules::apply_move_to_board(
+            &mut node.board,
+            &node.game_state,
+            &notation::parse_move("d2d4")
+        );
+        let stats = board::compute_stats(&node.board);
         assert_eq!(evaluate(&stats), 0.0);
     }
 }
