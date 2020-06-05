@@ -1,13 +1,14 @@
 //! Basic type definitions and functions.
 
 // Piece type flags.
-pub const SQ_E: u8 = 0;
-pub const SQ_P: u8 = 0b00000001;
-pub const SQ_B: u8 = 0b00000010;
-pub const SQ_N: u8 = 0b00000100;
-pub const SQ_R: u8 = 0b00001000;
-pub const SQ_Q: u8 = 0b00010000;
-pub const SQ_K: u8 = 0b00100000;
+pub const SQ_E: u8         = 0;
+pub const SQ_P: u8         = 0b00000001;
+pub const SQ_B: u8         = 0b00000010;
+pub const SQ_N: u8         = 0b00000100;
+pub const SQ_R: u8         = 0b00001000;
+pub const SQ_Q: u8         = 0b00010000;
+pub const SQ_K: u8         = 0b00100000;
+pub const SQ_TYPE_MASK: u8 = 0b00111111;
 
 // Piece color flags.
 pub const SQ_WH: u8         = 0b01000000;
@@ -32,18 +33,28 @@ pub const SQ_BL_K: u8 = SQ_BL|SQ_K;
 pub fn has_flag(i: u8, flag: u8) -> bool { i & flag == flag }
 
 // Wrappers for clearer naming.
+/// Get type of piece on square, without color.
+#[inline]
+pub fn get_type(square: u8) -> u8 { square & SQ_TYPE_MASK }
+/// Return true if the piece on this square is of type `piece_type`.
+#[inline]
+pub fn is_type(square: u8, piece_type: u8) -> bool { get_type(square) == piece_type }
+/// Return true if the piece on this square is the same as `piece`.
 #[inline]
 pub fn is_piece(square: u8, piece: u8) -> bool { has_flag(square, piece) }
+/// Return true if the piece on this square has this color.
 #[inline]
 pub fn is_color(square: u8, color: u8) -> bool { has_flag(square, color) }
+/// Return true if this square has a white piece.
 #[inline]
 pub fn is_white(square: u8) -> bool { is_color(square, SQ_WH) }
+/// Return true if this square has a black piece.
 #[inline]
 pub fn is_black(square: u8) -> bool { is_color(square, SQ_BL) }
-
-/// Get piece color.
+/// Return the color of the piece on this square.
 #[inline]
 pub fn get_color(square: u8) -> u8 { square & SQ_COLOR_MASK }
+
 /// Get opposite color.
 #[inline]
 pub fn opposite(color: u8) -> u8 { color ^ SQ_COLOR_MASK }
@@ -155,7 +166,15 @@ pub fn is_empty(board: &Board, coords: &Pos) -> bool {
     get_square(board, coords) == SQ_E
 }
 
-/// Count number of pieces on board
+pub fn get_piece_iterator<'a>(board: &'a Board) -> Box<dyn Iterator<Item = (u8, Pos)> + 'a> {
+    Box::new(
+        board.iter().enumerate()
+            .filter(|(_, s)| **s != SQ_E)
+            .map(|(i, s)| (*s, ((i / 8) as i8, (i % 8) as i8)))
+    )
+}
+
+/// Count number of pieces on board. Used for debugging.
 pub fn num_pieces(board: &Board) -> u8 {
     let mut count = 0;
     for i in board.iter() {
@@ -180,22 +199,7 @@ pub fn find_king(board: &Board, color: u8) -> Pos {
     (0, 0)
 }
 
-/// A movement, with before/after positions and optional promotion.
-pub type Move = (Pos, Pos, Option<u8>);
-
-/// Apply a move `m` to a copy of `board`.
-pub fn apply(board: &Board, m: &Move) -> Board {
-    let mut new_board = board.clone();
-    apply_into(&mut new_board, m);
-    new_board
-}
-
-/// Apply a move `m` into `board`.
-pub fn apply_into(board: &mut Board, m: &Move) {
-    set_square(board, &m.1, get_square(board, &m.0));
-    clear_square(board, &m.0)
-}
-
+/// Write a text view of the board. Used for debugging.
 pub fn draw(board: &Board, f: &mut dyn std::io::Write) {
     for r in (0..8).rev() {
         let mut rank = String::with_capacity(8);
@@ -215,6 +219,160 @@ pub fn draw(board: &Board, f: &mut dyn std::io::Write) {
         writeln!(f, "{} {}", r + 1, rank).unwrap();
     }
     writeln!(f, "  abcdefgh").unwrap();
+}
+
+/// A movement, with before/after positions and optional promotion.
+pub type Move = (Pos, Pos, Option<u8>);
+
+/// Apply a move `m` to a copy of `board`.
+pub fn apply(board: &Board, m: &Move) -> Board {
+    let mut new_board = board.clone();
+    apply_into(&mut new_board, m);
+    new_board
+}
+
+/// Apply a move `m` into `board`.
+pub fn apply_into(board: &mut Board, m: &Move) {
+    set_square(board, &m.1, get_square(board, &m.0));
+    clear_square(board, &m.0)
+}
+
+/// Storage for precomputed board pieces stats.
+#[derive(Debug, Clone, PartialEq)]
+pub struct BoardStats {
+    pub num_pawns: i8,
+    pub num_bishops: i8,
+    pub num_knights: i8,
+    pub num_rooks: i8,
+    pub num_queens: i8,
+    pub num_kings: i8,
+    pub num_doubled_pawns: i8,   // Pawns that are on the same file as a friend.
+    pub num_backward_pawns: i8,  // Pawns behind all other pawns on adjacent files.
+    pub num_isolated_pawns: i8,  // Pawns that have no friend pawns on adjacent files.
+    pub mobility: i32,
+}
+
+impl BoardStats {
+    pub fn new() -> BoardStats {
+        BoardStats {
+            num_pawns: 0, num_bishops: 0, num_knights: 0, num_rooks: 0, num_queens: 0,
+            num_kings: 0, num_doubled_pawns: 0, num_backward_pawns: 0, num_isolated_pawns: 0,
+            mobility: 0,
+        }
+    }
+
+    pub fn reset(&mut self) {
+        self.num_pawns = 0;
+        self.num_bishops = 0;
+        self.num_knights = 0;
+        self.num_rooks = 0;
+        self.num_queens = 0;
+        self.num_kings = 0;
+        self.num_doubled_pawns = 0;
+        self.num_backward_pawns = 0;
+        self.num_isolated_pawns = 0;
+        self.mobility = 0;
+    }
+}
+
+/// Create two new BoardStats objects from the board, for white and black.
+///
+/// See `compute_stats_into` for details.
+pub fn compute_stats(board: &Board) -> (BoardStats, BoardStats) {
+    let mut stats = (BoardStats::new(), BoardStats::new());
+    compute_stats_into(board, &mut stats);
+    stats
+}
+
+pub fn compute_stats_into(board: &Board, stats: &mut (BoardStats, BoardStats)) {
+    compute_color_stats_into(board, &mut stats.0, SQ_WH);
+    compute_color_stats_into(board, &mut stats.1, SQ_BL);
+}
+
+/// Update `stats` for `color` from given `board`
+///
+/// Refresh all stats *except* `mobility`.
+pub fn compute_color_stats_into(board: &Board, stats: &mut BoardStats, color: u8) {
+    stats.reset();
+    for (piece, (pos_f, pos_r)) in get_piece_iterator(board) {
+        if piece == SQ_E || !is_color(piece, color) {
+            continue
+        }
+        match get_type(piece) {
+            SQ_P => {
+                stats.num_pawns += 1;
+                let mut doubled = false;
+                let mut isolated = true;
+                let mut backward = true;
+                for r in 0..8 {
+                    // Check for doubled pawns.
+                    if
+                        !doubled &&
+                        is_piece(get_square(board, &(pos_f, r)), color|SQ_P) && r != pos_r
+                    {
+                        doubled = true;
+                    }
+                    // Check for isolated pawns.
+                    if
+                        isolated &&
+                        (
+                            // Check on the left file if not on a-file...
+                            (
+                                pos_f > POS_MIN &&
+                                is_piece(get_square(board, &(pos_f - 1, r)), color|SQ_P)
+                            ) ||
+                            // Check on the right file if not on h-file...
+                            (
+                                pos_f < POS_MAX &&
+                                is_piece(get_square(board, &(pos_f + 1, r)), color|SQ_P)
+                            )
+                        )
+                    {
+                        isolated = false;
+                    }
+                    // Check for backward pawns.
+                    if backward {
+                        if color == SQ_WH && r <= pos_r {
+                            if (
+                                pos_f > POS_MIN &&
+                                is_type(get_square(board, &(pos_f - 1, r)), SQ_P)
+                            ) || (
+                                pos_f < POS_MAX &&
+                                is_type(get_square(board, &(pos_f + 1, r)), SQ_P)
+                            ) {
+                                backward = false;
+                            }
+                        } else if color == SQ_BL && r >= pos_r {
+                            if (
+                                pos_f > POS_MIN &&
+                                is_type(get_square(board, &(pos_f - 1, r)), SQ_P)
+                            ) || (
+                                pos_f < POS_MAX &&
+                                is_type(get_square(board, &(pos_f + 1, r)), SQ_P)
+                            ) {
+                                backward = false;
+                            }
+                        }
+                    }
+                }
+                if doubled {
+                    stats.num_doubled_pawns += 1;
+                }
+                if isolated {
+                    stats.num_isolated_pawns += 1;
+                }
+                if backward {
+                    stats.num_backward_pawns += 1;
+                }
+            },
+            SQ_R => stats.num_rooks += 1,
+            SQ_N => stats.num_knights += 1,
+            SQ_B => stats.num_bishops += 1,
+            SQ_Q => stats.num_queens += 1,
+            SQ_K => stats.num_kings += 1,
+            _ => {}
+        }
+    }
 }
 
 #[cfg(test)]
@@ -315,5 +473,74 @@ mod tests {
         apply_into(&mut b, &(pos("f4"), pos("e6"), None));
         assert_eq!(get_square(&b, &pos("e6")), SQ_BL_N);
         assert_eq!(num_pieces(&b), 1);
+    }
+
+    #[test]
+    fn test_compute_stats() {
+        // Check that initial stats are correct.
+        let b = new();
+        let initial_stats = BoardStats {
+            num_pawns: 8,
+            num_bishops: 2,
+            num_knights: 2,
+            num_rooks: 2,
+            num_queens: 1,
+            num_kings: 1,
+            num_doubled_pawns: 0,
+            num_backward_pawns: 0,
+            num_isolated_pawns: 0,
+            mobility: 0,
+        };
+        let mut stats = compute_stats(&b);
+        assert!(stats.0 == stats.1);
+        assert!(stats.0 == initial_stats);
+
+        // Check that doubled pawns are correctly counted.
+        let mut b = new_empty();
+        set_square(&mut b, &pos("d4"), SQ_WH_P);
+        set_square(&mut b, &pos("d6"), SQ_WH_P);
+        compute_color_stats_into(&b, &mut stats.0, SQ_WH);
+        assert_eq!(stats.0.num_doubled_pawns, 2);
+        // Add a pawn on another file, no changes expected.
+        set_square(&mut b, &pos("e6"), SQ_WH_P);
+        compute_color_stats_into(&b, &mut stats.0, SQ_WH);
+        assert_eq!(stats.0.num_doubled_pawns, 2);
+        // Add a pawn backward in the d-file: there are now 3 doubled pawns.
+        set_square(&mut b, &pos("d2"), SQ_WH_P);
+        compute_color_stats_into(&b, &mut stats.0, SQ_WH);
+        assert_eq!(stats.0.num_doubled_pawns, 3);
+
+        // Check that isolated and backward pawns are correctly counted.
+        assert_eq!(stats.0.num_isolated_pawns, 0);
+        assert_eq!(stats.0.num_backward_pawns, 2);  // A bit weird?
+        // Protect d4 pawn with a friend in e3: it is not isolated nor backward anymore.
+        set_square(&mut b, &pos("e3"), SQ_WH_P);
+        compute_color_stats_into(&b, &mut stats.0, SQ_WH);
+        assert_eq!(stats.0.num_doubled_pawns, 5);
+        assert_eq!(stats.0.num_isolated_pawns, 0);
+        assert_eq!(stats.0.num_backward_pawns, 1);
+        // Add an adjacent friend to d2 pawn: no pawns are left isolated or backward.
+        set_square(&mut b, &pos("c2"), SQ_WH_P);
+        compute_color_stats_into(&b, &mut stats.0, SQ_WH);
+        assert_eq!(stats.0.num_doubled_pawns, 5);
+        assert_eq!(stats.0.num_isolated_pawns, 0);
+        assert_eq!(stats.0.num_backward_pawns, 0);
+        // Add an isolated/backward white pawn in a far file.
+        set_square(&mut b, &pos("a2"), SQ_WH_P);
+        compute_color_stats_into(&b, &mut stats.0, SQ_WH);
+        assert_eq!(stats.0.num_doubled_pawns, 5);
+        assert_eq!(stats.0.num_isolated_pawns, 1);
+        assert_eq!(stats.0.num_backward_pawns, 1);
+
+        // Check for pawns that are backward but not isolated.
+        let mut b = new_empty();
+        // Here, d4 pawn protects both e5 and e3, but it is backward.
+        set_square(&mut b, &pos("d4"), SQ_WH_P);
+        set_square(&mut b, &pos("e5"), SQ_WH_P);
+        set_square(&mut b, &pos("e3"), SQ_WH_P);
+        compute_color_stats_into(&b, &mut stats.0, SQ_WH);
+        assert_eq!(stats.0.num_doubled_pawns, 2);
+        assert_eq!(stats.0.num_isolated_pawns, 0);
+        assert_eq!(stats.0.num_backward_pawns, 1);
     }
 }

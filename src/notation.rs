@@ -4,6 +4,7 @@ use crate::board;
 
 pub const NULL_MOVE: &str = "0000";
 
+/// Create a string containing the UCI algebraic notation of this move.
 pub fn move_to_string(m: &board::Move) -> String {
     let mut move_string = String::new();
     move_string.push_str(&board::pos_string(&m.0));
@@ -20,6 +21,7 @@ pub fn move_to_string(m: &board::Move) -> String {
     move_string
 }
 
+/// Parse an UCI move algebraic notation string to a board::Move.
 pub fn parse_move(m_str: &str) -> board::Move {
     let prom = if m_str.len() == 5 {
         Some(match m_str.as_bytes()[4] {
@@ -33,6 +35,11 @@ pub fn parse_move(m_str: &str) -> board::Move {
         None
     };
     (board::pos(&m_str[0..2]), board::pos(&m_str[2..4]), prom)
+}
+
+/// Create a space-separated string of moves. Used for debugging.
+pub fn move_list_to_string(moves: &Vec<board::Move>) -> String {
+    moves.iter().map(|m| move_to_string(m)).collect::<Vec<_>>().join(" ")
 }
 
 pub const FEN_START: &str = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";

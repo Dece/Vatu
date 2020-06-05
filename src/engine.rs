@@ -13,6 +13,8 @@ use crate::uci;
 
 /// Analysis engine.
 pub struct Engine {
+    /// Debug mode, log some data.
+    debug: bool,
     /// Current game state, starting point of further analysis.
     state: GameState,
     /// Communication mode.
@@ -30,11 +32,23 @@ pub struct Engine {
 #[derive(Clone)]
 struct GameState {
     board: board::Board,
+    stats: (board::BoardStats, board::BoardStats),  // white and black pieces stats.
     color: u8,
     castling: u8,
     en_passant: Option<board::Pos>,
     halfmove: i32,
     fullmove: i32,
+}
+
+impl std::fmt::Debug for GameState {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(
+            f,
+            "GameState {{ board: [...], stats: {:?}, color: {:08b}, castling: {:08b}, \
+             en_passant: {:?}, halfmove: {}, fullmove: {} }}",
+            self.stats, self.color, self.castling, self.en_passant, self.halfmove, self.fullmove
+        )
+    }
 }
 
 /// Engine communication mode.
@@ -59,11 +73,21 @@ pub enum Cmd {
     UciGo(Vec<uci::GoArgs>),              // UCI "go" command.
     Stop,                                 // Stop working ASAP.
     TmpBestMove(Option<board::Move>),  // Send best move found by analysis worker (TEMPORARY).
+    WorkerInfo(Vec<Info>),                // Informations from a worker.
 
     // Commands that can be sent by the engine.
+    /// Ask for a string to be logged or printed.
+    ///
+    /// Note that workers can send this command to engine, expecting
+    /// the message to be forwarded to whatever can log.
+    Log(String),
+    /// Report found best move.
     BestMove(Option<board::Move>),
+    /// Report ongoing analysis information.
+    Info(Vec<Info>),
 }
 
+/// Parameters for starting work.
 #[derive(Clone)]
 struct WorkArgs {
     move_time: i32,
@@ -71,6 +95,12 @@ struct WorkArgs {
     black_time: i32,
     white_inc: i32,
     black_inc: i32,
+}
+
+/// Information to be transmitted back to whatever is listening.
+#[derive(Debug, Clone)]
+pub enum Info {
+    CurrentMove(board::Move),
 }
 
 pub const CASTLING_WH_K: u8 = 0b00000001;
@@ -83,8 +113,10 @@ pub const CASTLING_MASK: u8 = 0b00001111;
 impl Engine {
     pub fn new() -> Engine {
         Engine {
+            debug: true,
             state: GameState {
                 board: board::new_empty(),
+                stats: (board::BoardStats::new(), board::BoardStats::new()),
                 color: board::SQ_WH,
                 castling: CASTLING_MASK,
                 en_passant: None,
@@ -124,6 +156,8 @@ impl Engine {
             Cmd::UciGo(args) => self.uci_go(&args),
             Cmd::Stop => self.stop(),
             // Workers commands.
+            Cmd::Log(s) => self.reply(Cmd::Log(s.to_string())),
+            Cmd::WorkerInfo(infos) => self.reply(Cmd::Info(infos.to_vec())),
             Cmd::TmpBestMove(m) => self.reply(Cmd::BestMove(*m)),
             _ => eprintln!("Not an engine input command: {:?}", cmd),
         }
@@ -142,7 +176,6 @@ impl Engine {
     ///
     /// For speed purposes, it assumes values are always valid.
     fn apply_fen(&mut self, fen: &notation::Fen) {
-        eprintln!("Applying FEN {:?}", fen);
         self.set_fen_placement(&fen.placement);
         self.set_fen_color(&fen.color);
         self.set_fen_castling(&fen.castling);
@@ -202,13 +235,18 @@ impl Engine {
     ///
     /// Stop working after `movetime` ms, or go on forever if it's -1.
     fn work(&mut self, args: &WorkArgs) {
+        if self.debug {
+            self.reply(Cmd::Log(format!("Current evaluation: {}", evaluate(&self.state.stats))));
+        }
+
         self.working.store(true, atomic::Ordering::Relaxed);
         let state = self.state.clone();
         let args = args.clone();
         let working = self.working.clone();
         let tx = match &self.mode { Mode::Uci(_, _, tx) => tx.clone(), _ => return };
+        let debug = self.debug;
         thread::spawn(move || {
-            analyze(&state, &args, working, tx);
+            analyze(&state, &args, working, tx, debug);
         });
     }
 
@@ -249,6 +287,7 @@ impl Engine {
                 }
             }
         }
+        board::compute_stats_into(&self.state.board, &mut self.state.stats);
     }
 
     /// Start working using parameters passed with a "go" command.
@@ -280,6 +319,7 @@ fn analyze(
     _args: &WorkArgs,
     wip: Arc<atomic::AtomicBool>,
     tx: mpsc::Sender<Cmd>,
+    debug: bool,
 ) {
     if !wip.load(atomic::Ordering::Relaxed) {
         return;
@@ -287,9 +327,38 @@ fn analyze(
 
     // Stupid engine! Return a random move.
     let moves = rules::get_player_legal_moves(&state.board, state.color);
-    let mut rng = rand::thread_rng();
-    let best_move = moves.iter().choose(&mut rng).and_then(|m| Some(*m));
-    thread::sleep(time::Duration::from_millis(300u64));
+    if debug {
+        let state_str = format!("Current state: {:?}", state);
+        tx.send(Cmd::Log(state_str)).unwrap();
+        let mut s = vec!();
+        board::draw(&state.board, &mut s);
+        let draw_str = String::from_utf8_lossy(&s).to_string();
+        tx.send(Cmd::Log(draw_str)).unwrap();
+        let moves_str = format!("Legal moves: {}", notation::move_list_to_string(&moves));
+        tx.send(Cmd::Log(moves_str)).unwrap();
+    }
+    // let mut rng = rand::thread_rng();
+    // let best_move = moves.iter().choose(&mut rng).and_then(|m| Some(*m));
+
+    let mut best_e = if board::is_white(state.color) { -999.0 } else { 999.0 };
+    let mut best_move = None;
+    for m in moves {
+        // tx.send(Cmd::WorkerInfo(vec!(Info::CurrentMove(m)))).unwrap();
+        let mut board = state.board.clone();
+        board::apply_into(&mut board, &m);
+        let stats = board::compute_stats(&board);
+        let e = evaluate(&stats);
+        tx.send(Cmd::Log(format!("Move {} eval {}", notation::move_to_string(&m), e))).unwrap();
+
+        if
+            (board::is_white(state.color) && e > best_e) ||
+            (board::is_black(state.color) && e < best_e)
+        {
+            best_e = e;
+            best_move = Some(m.clone());
+        }
+    }
+    thread::sleep(time::Duration::from_millis(500u64));
     tx.send(Cmd::TmpBestMove(best_move)).unwrap();
 
     // thread::sleep(time::Duration::from_secs(1));
@@ -301,4 +370,38 @@ fn analyze(
     //     });
     // }
 
+}
+
+fn evaluate(stats: &(board::BoardStats, board::BoardStats)) -> f32 {
+    let (ws, bs) = stats;
+    (
+        200.0 * (ws.num_kings - bs.num_kings) as f32
+        + 9.0 * (ws.num_queens - bs.num_queens) as f32
+        + 5.0 * (ws.num_rooks - bs.num_rooks) as f32
+        + 3.0 * (ws.num_bishops - bs.num_bishops) as f32
+        + 3.0 * (ws.num_knights - bs.num_knights) as f32
+        + (ws.num_pawns - bs.num_pawns) as f32
+        + 0.5 * (  // FIXME
+            ws.num_doubled_pawns - bs.num_doubled_pawns +
+            ws.num_isolated_pawns - bs.num_isolated_pawns +
+            ws.num_backward_pawns - bs.num_backward_pawns
+        ) as f32
+        + 0.1 * (ws.mobility - bs.mobility) as f32
+    )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_evaluate() {
+        let mut b = board::new();
+        let stats = board::compute_stats(&b);
+        assert_eq!(evaluate(&stats), 0.0);
+
+        board::apply_into(&mut b, &(notation::parse_move("d2d4")));
+        let stats = board::compute_stats(&b);
+        assert_eq!(evaluate(&stats), 0.0);
+    }
 }

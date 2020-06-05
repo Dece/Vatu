@@ -195,10 +195,16 @@ impl Uci {
 
     /// Handle an engine command.
     fn handle_engine_command(&mut self, cmd: &engine::Cmd) {
-        self.log(format!("ENG >>> {:?}", cmd));
         match cmd {
             engine::Cmd::UciChannel(s) => {
+                self.log("ENG >>> Channel opened.".to_string());
                 self.engine_in = Some(s.to_owned());
+            }
+            engine::Cmd::Log(s) => {
+                self.log(s.to_string());
+            }
+            engine::Cmd::Info(infos) => {
+                self.send_infos(infos);
             }
             engine::Cmd::BestMove(m) => {
                 self.state = State::Ready;
@@ -227,6 +233,19 @@ impl Uci {
     /// Notify interface that it is ready.
     fn send_ready(&mut self) {
         self.send("readyok");
+    }
+
+    /// Send engine analysis information.
+    fn send_infos(&mut self, infos: &Vec<engine::Info>) {
+        let mut s = "info".to_string();
+        for i in infos {
+            match i {
+                engine::Info::CurrentMove(m) => {
+                    s.push_str(&format!(" currmove {}", notation::move_to_string(m)));
+                }
+            }
+        }
+        self.send(&s);
     }
 
     /// Send best move.
