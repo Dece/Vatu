@@ -72,6 +72,7 @@ enum Mode {
 pub enum Cmd {
     // Commands that can be received by the engine.
     UciChannel(mpsc::Sender<Cmd>),        // Provide a sender to UCI to start receiving commands.
+    UciDebug(bool),                       // UCI "debug" command.
     UciPosition(Vec<uci::PositionArgs>),  // UCI "position" command.
     UciGo(Vec<uci::GoArgs>),              // UCI "go" command.
     Stop,                                 // Stop working ASAP.
@@ -110,7 +111,7 @@ pub enum Info {
 impl Engine {
     pub fn new() -> Engine {
         Engine {
-            debug: true,
+            debug: false,
             node: Node::new(),
             mode: Mode::No,
             listening: false,
@@ -141,8 +142,9 @@ impl Engine {
     fn handle_command(&mut self, cmd: &Cmd) {
         match cmd {
             // UCI commands.
-            Cmd::UciPosition(args) => self.uci_position(&args),
-            Cmd::UciGo(args) => self.uci_go(&args),
+            Cmd::UciDebug(on) => self.debug = *on,
+            Cmd::UciPosition(args) => self.uci_position(args),
+            Cmd::UciGo(args) => self.uci_go(args),
             Cmd::Stop => self.stop(),
             // Workers commands.
             Cmd::Log(s) => self.reply(Cmd::Log(s.to_string())),
@@ -199,7 +201,6 @@ impl Engine {
     }
 
     fn apply_move(&mut self, m: &rules::Move) {
-        eprintln!("Applying {}...", notation::move_to_string(m));
         rules::apply_move_to(&mut self.node.board, &mut self.node.game_state, m);
     }
 
@@ -314,11 +315,9 @@ fn analyze(
         rules::apply_move_to(&mut board, &mut game_state, &m);
         let stats = board::compute_stats(&board);
         let e = evaluate(&stats);
-        tx.send(Cmd::Log(format!("Move {} eval {}", notation::move_to_string(&m), e))).unwrap();
-
         if
-            (board::is_white(game_state.color) && e > best_e) ||
-            (board::is_black(game_state.color) && e < best_e)
+            (board::is_white(node.game_state.color) && e > best_e) ||
+            (board::is_black(node.game_state.color) && e < best_e)
         {
             best_e = e;
             best_move = Some(m.clone());

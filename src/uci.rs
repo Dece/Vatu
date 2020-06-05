@@ -43,6 +43,7 @@ pub enum Cmd {
 #[derive(Debug)]
 pub enum UciCmd {
     Uci,
+    Debug(bool),
     IsReady,
     UciNewGame,
     Stop,
@@ -173,6 +174,10 @@ impl Uci {
                 self.send_identities();
                 self.setup_engine();
             },
+            UciCmd::Debug(on) => {
+                let args = engine::Cmd::UciDebug(*on);
+                self.engine_in.as_ref().unwrap().send(args).unwrap();
+            }
             UciCmd::IsReady => if self.state == State::Ready { self.send_ready() },
             UciCmd::UciNewGame => if self.state == State::Ready { /* Nothing to do. */ },
             UciCmd::Position(args) => if self.state == State::Ready {
@@ -269,6 +274,7 @@ fn parse_command(s: &str) -> UciCmd {
     let fields: Vec<&str> = s.split_whitespace().collect();
     match fields[0] {
         "uci" => UciCmd::Uci,
+        "debug" => UciCmd::Debug(fields[1] == "on"),
         "isready" => UciCmd::IsReady,
         "ucinewgame" => UciCmd::UciNewGame,
         "stop" => UciCmd::Stop,
