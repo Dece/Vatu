@@ -346,7 +346,7 @@ fn evaluate(stats: &(board::BoardStats, board::BoardStats)) -> f32 {
     + 3.0 * (ws.num_bishops - bs.num_bishops) as f32
     + 3.0 * (ws.num_knights - bs.num_knights) as f32
     + (ws.num_pawns - bs.num_pawns) as f32
-    + 0.5 * (  // FIXME
+    - 0.5 * (
         ws.num_doubled_pawns - bs.num_doubled_pawns +
         ws.num_isolated_pawns - bs.num_isolated_pawns +
         ws.num_backward_pawns - bs.num_backward_pawns
