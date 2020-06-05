@@ -2,13 +2,22 @@
 
 use crate::board::*;
 
+pub const CASTLING_WH_K: u8 = 0b00000001;
+pub const CASTLING_WH_Q: u8 = 0b00000010;
+pub const CASTLING_BL_K: u8 = 0b00000100;
+pub const CASTLING_BL_Q: u8 = 0b00001000;
+pub const CASTLING_MASK: u8 = 0b00001111;
+
+pub const START_WH_K_POS: Pos = pos("e1");
+pub const START_BL_K_POS: Pos = pos("e8");
+
 /// Get a list of legal moves for all pieces of this color.
-pub fn get_player_legal_moves(board: &Board, color: u8) -> Vec<Move> {
-    filter_illegal_moves(board, color, get_player_moves(board, color))
+pub fn get_player_legal_moves(board: &Board, color: u8, castling: u8) -> Vec<Move> {
+    filter_illegal_moves(board, color, get_player_moves(board, color, castling))
 }
 
 /// Get a list of moves for all pieces of this color.
-pub fn get_player_moves(board: &Board, color: u8) -> Vec<Move> {
+pub fn get_player_moves(board: &Board, color: u8, castling: u8) -> Vec<Move> {
     let mut moves = vec!();
     for r in 0..8 {
         for f in 0..8 {
@@ -17,7 +26,7 @@ pub fn get_player_moves(board: &Board, color: u8) -> Vec<Move> {
                 continue
             }
             if is_color(get_square(board, &p), color) {
-                moves.append(&mut get_piece_moves(board, &p));
+                moves.append(&mut get_piece_moves(board, &p, castling));
             }
         }
     }
@@ -25,14 +34,14 @@ pub fn get_player_moves(board: &Board, color: u8) -> Vec<Move> {
 }
 
 /// Get a list of moves for the piece at position `at`.
-pub fn get_piece_moves(board: &Board, at: &Pos) -> Vec<Move> {
+pub fn get_piece_moves(board: &Board, at: &Pos, castling: u8) -> Vec<Move> {
     match get_square(board, at) {
         p if is_piece(p, SQ_P) => get_pawn_moves(board, at, p),
         p if is_piece(p, SQ_B) => get_bishop_moves(board, at, p),
         p if is_piece(p, SQ_N) => get_knight_moves(board, at, p),
         p if is_piece(p, SQ_R) => get_rook_moves(board, at, p),
         p if is_piece(p, SQ_Q) => get_queen_moves(board, at, p),
-        p if is_piece(p, SQ_K) => get_king_moves(board, at, p),
+        p if is_piece(p, SQ_K) => get_king_moves(board, at, p, castling),
         _ => vec!(),
     }
 }
@@ -162,7 +171,7 @@ fn get_queen_moves(board: &Board, at: &Pos, piece: u8) -> Vec<Move> {
     moves
 }
 
-fn get_king_moves(board: &Board, at: &Pos, piece: u8) -> Vec<Move> {
+fn get_king_moves(board: &Board, at: &Pos, piece: u8, castling: u8) -> Vec<Move> {
     let (f, r) = at;
     let mut moves = vec!();
     for offset in [(-1, 1), (0, 1), (1, 1), (-1, 0), (1, 0), (-1, -1), (0, -1), (1, -1)].iter() {
@@ -202,14 +211,14 @@ fn move_on_enemy(piece1: u8, pos1: &Pos, piece2: u8, pos2: &Pos) -> Option<Move>
 /// Return an iterator filtering out illegal moves from given list.
 ///
 /// Pass color of moving player to avoid checking it for every move.
-fn filter_illegal_moves(board: &Board, color: u8, moves: Vec<Move>) -> Vec<Move> {
+fn filter_illegal_moves(board: &Board, color: u8, castling: u8, moves: Vec<Move>) -> Vec<Move> {
     let king_p = find_king(board, color);
     moves.into_iter().filter(|m| {
         // If king moved, use its new position.
         let king_p = if m.0 == king_p { m.1 } else { king_p };
         let new_board = apply(board, m);
         // Check if the move makes the player king in check.
-        if is_attacked(&new_board, &king_p) {
+        if is_attacked(&new_board, &king_p, castling) {
             return false
         }
         true
@@ -217,9 +226,9 @@ fn filter_illegal_moves(board: &Board, color: u8, moves: Vec<Move>) -> Vec<Move>
 }
 
 /// Return true if the piece at position `at` is attacked.
-fn is_attacked(board: &Board, at: &Pos) -> bool {
+fn is_attacked(board: &Board, at: &Pos, castling: u8) -> bool {
     let color = get_color(get_square(board, at));
-    let enemy_moves = get_player_moves(board, opposite(color));
+    let enemy_moves = get_player_moves(board, opposite(color), castling);
     for m in enemy_moves.iter() {
         if *at == m.1 {
             return true
@@ -236,7 +245,7 @@ mod tests {
     fn test_get_player_moves() {
         let b = new();
         // At first move, white has 16 pawn moves and 4 knight moves.
-        let moves = get_player_moves(&b, SQ_WH);
+        let moves = get_player_moves(&b, SQ_WH, CASTLING_MASK);
         assert_eq!(moves.len(), 20);
     }
 

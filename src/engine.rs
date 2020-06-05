@@ -4,8 +4,6 @@ use std::sync::{Arc, atomic, mpsc};
 use std::thread;
 use std::time;
 
-use rand::seq::IteratorRandom;
-
 use crate::board;
 use crate::notation;
 use crate::rules;
@@ -103,12 +101,6 @@ pub enum Info {
     CurrentMove(board::Move),
 }
 
-pub const CASTLING_WH_K: u8 = 0b00000001;
-pub const CASTLING_WH_Q: u8 = 0b00000010;
-pub const CASTLING_BL_K: u8 = 0b00000100;
-pub const CASTLING_BL_Q: u8 = 0b00001000;
-pub const CASTLING_MASK: u8 = 0b00001111;
-
 /// General engine implementation.
 impl Engine {
     pub fn new() -> Engine {
@@ -118,7 +110,7 @@ impl Engine {
                 board: board::new_empty(),
                 stats: (board::BoardStats::new(), board::BoardStats::new()),
                 color: board::SQ_WH,
-                castling: CASTLING_MASK,
+                castling: rules::CASTLING_MASK,
                 en_passant: None,
                 halfmove: 0,
                 fullmove: 1,
@@ -199,10 +191,10 @@ impl Engine {
     fn set_fen_castling(&mut self, castling: &str) {
         for c in castling.chars() {
             match c {
-                'K' => self.state.castling |= CASTLING_WH_K,
-                'Q' => self.state.castling |= CASTLING_WH_Q,
-                'k' => self.state.castling |= CASTLING_BL_K,
-                'q' => self.state.castling |= CASTLING_BL_Q,
+                'K' => self.state.castling |= rules::CASTLING_WH_K,
+                'Q' => self.state.castling |= rules::CASTLING_WH_Q,
+                'k' => self.state.castling |= rules::CASTLING_BL_K,
+                'q' => self.state.castling |= rules::CASTLING_BL_Q,
                 _ => {}
             }
         }
@@ -325,7 +317,6 @@ fn analyze(
         return;
     }
 
-    // Stupid engine! Return a random move.
     let moves = rules::get_player_legal_moves(&state.board, state.color);
     if debug {
         let state_str = format!("Current state: {:?}", state);
@@ -337,8 +328,6 @@ fn analyze(
         let moves_str = format!("Legal moves: {}", notation::move_list_to_string(&moves));
         tx.send(Cmd::Log(moves_str)).unwrap();
     }
-    // let mut rng = rand::thread_rng();
-    // let best_move = moves.iter().choose(&mut rng).and_then(|m| Some(*m));
 
     let mut best_e = if board::is_white(state.color) { -999.0 } else { 999.0 };
     let mut best_move = None;
