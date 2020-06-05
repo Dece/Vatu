@@ -199,6 +199,7 @@ impl Engine {
     }
 
     fn apply_move(&mut self, m: &rules::Move) {
+        eprintln!("Applying {}...", notation::move_to_string(m));
         rules::apply_move_to(&mut self.node.board, &mut self.node.game_state, m);
     }
 
@@ -299,7 +300,7 @@ fn analyze(
         tx.send(Cmd::Log(draw_str)).unwrap();
     }
 
-    let moves = rules::get_player_legal_moves(&node.board, &node.game_state);
+    let moves = rules::get_player_moves(&node.board, &node.game_state, true);
     if debug {
         let moves_str = format!("Legal moves: {}", notation::move_list_to_string(&moves));
         tx.send(Cmd::Log(moves_str)).unwrap();
@@ -364,11 +365,7 @@ mod tests {
         let stats = board::compute_stats(&node.board);
         assert_eq!(evaluate(&stats), 0.0);
 
-        rules::apply_move_to_board(
-            &mut node.board,
-            &node.game_state,
-            &notation::parse_move("d2d4")
-        );
+        rules::apply_move_to_board(&mut node.board, &notation::parse_move("d2d4"));
         let stats = board::compute_stats(&node.board);
         assert_eq!(evaluate(&stats), 0.0);
     }

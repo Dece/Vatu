@@ -150,26 +150,38 @@ pub fn eq(b1: &Board, b2: &Board) -> bool {
     b1.iter().zip(b2.iter()).all(|(a, b)| a == b)
 }
 
+/// Get value of the square at this position.
 #[inline]
 pub const fn get_square(board: &Board, coords: &Pos) -> u8 {
     board[(coords.0 * 8 + coords.1) as usize]
 }
 
+/// Set a new value for the square at this position.
 #[inline]
 pub fn set_square(board: &mut Board, coords: &Pos, piece: u8) {
     board[(coords.0 * 8 + coords.1) as usize] = piece;
 }
 
+/// Set the square empty at this position.
 #[inline]
 pub fn clear_square(board: &mut Board, coords: &Pos) {
     set_square(board, coords, SQ_E);
 }
 
+/// Move a piece from a position to another, clearing initial square.
+#[inline]
+pub fn move_piece(board: &mut Board, from: &Pos, to: &Pos) {
+    set_square(board, &to, get_square(board, &from));
+    clear_square(board, &from);
+}
+
+/// Return true of the square at this position is empty.
 #[inline]
 pub const fn is_empty(board: &Board, coords: &Pos) -> bool {
     get_square(board, coords) == SQ_E
 }
 
+/// Return an iterator over the pieces of the board along with pos.
 pub fn get_piece_iterator<'a>(board: &'a Board) -> Box<dyn Iterator<Item = (u8, Pos)> + 'a> {
     Box::new(
         board.iter().enumerate()
@@ -190,17 +202,16 @@ pub fn num_pieces(board: &Board) -> u8 {
 }
 
 /// Find the king of `color`.
-pub fn find_king(board: &Board, color: u8) -> Pos {
+pub fn find_king(board: &Board, color: u8) -> Option<Pos> {
     for f in 0..8 {
         for r in 0..8 {
             let s = get_square(board, &(f, r));
             if is_color(s, color) && is_piece(s, SQ_K) {
-                return (f, r)
+                return Some((f, r))
             }
         }
     }
-    eprintln!("No king on board!");
-    (0, 0)
+    None
 }
 
 /// Write a text view of the board. Used for debugging.
@@ -441,9 +452,11 @@ mod tests {
 
     #[test]
     fn test_find_king() {
+        let b = new_empty();
+        assert_eq!(find_king(&b, SQ_WH), None);
         let b = new();
-        assert_eq!(find_king(&b, SQ_WH), pos("e1"));
-        assert_eq!(find_king(&b, SQ_BL), pos("e8"));
+        assert_eq!(find_king(&b, SQ_WH), Some(pos("e1")));
+        assert_eq!(find_king(&b, SQ_BL), Some(pos("e8")));
     }
 
     #[test]
