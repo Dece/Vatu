@@ -39,9 +39,6 @@ pub const fn get_type(square: u8) -> u8 { square & SQ_TYPE_MASK }
 /// Return true if the piece on this square is of type `piece_type`.
 #[inline]
 pub const fn is_type(square: u8, piece_type: u8) -> bool { get_type(square) == piece_type }
-/// Return true if the piece on this square is the same as `piece`.
-#[inline]
-pub const fn is_piece(square: u8, piece: u8) -> bool { has_flag(square, piece) }
 /// Return true if the piece on this square has this color.
 #[inline]
 pub const fn is_color(square: u8, color: u8) -> bool { has_flag(square, color) }
@@ -54,6 +51,9 @@ pub const fn is_black(square: u8) -> bool { is_color(square, SQ_BL) }
 /// Return the color of the piece on this square.
 #[inline]
 pub const fn get_color(square: u8) -> u8 { square & SQ_COLOR_MASK }
+/// Return true if the piece on this square is the same as `piece`.
+#[inline]
+pub const fn is_piece(square: u8, piece: u8) -> bool { has_flag(square, piece) }
 
 /// Get opposite color.
 #[inline]

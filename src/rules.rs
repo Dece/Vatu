@@ -72,7 +72,7 @@ pub fn apply_move_to(board: &mut Board, game_state: &mut GameState, m: &Move) {
             _ => {}
         };
     }
-    // Else, check if it's either to rook or the king that moved.
+    // Else, check if it's either a rook or the king that moved.
     else {
         let piece = get_square(board, &m.1);
         if is_white(piece) && game_state.castling & CASTLING_WH_MASK != 0 {
@@ -135,6 +135,10 @@ pub fn apply_move_to_board(board: &mut Board, m: &Move) {
         }
     } else {
         move_piece(board, &m.0, &m.1);
+        if let Some(prom_type) = m.2 {
+            let color = get_color(get_square(board, &m.1));
+            set_square(board, &m.1, color|prom_type);
+        }
     }
 }
 
