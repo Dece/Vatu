@@ -64,12 +64,50 @@ pub fn apply_move(board: &Board, game_state: &GameState, m: &Move) -> (Board, Ga
 pub fn apply_move_to(board: &mut Board, game_state: &mut GameState, m: &Move) {
     apply_move_to_board(board, m);
     apply_move_to_state(game_state, m);
+    // If the move is a castle, remove it from castling options.
     if let Some(castle) = get_castle(m) {
         match castle {
             CASTLING_WH_K | CASTLING_WH_Q => game_state.castling &= !CASTLING_WH_MASK,
             CASTLING_BL_K | CASTLING_BL_Q => game_state.castling &= !CASTLING_BL_MASK,
             _ => {}
         };
+    }
+    // Else, check if it's either to rook or the king that moved.
+    else {
+        let piece = get_square(board, &m.1);
+        if is_white(piece) && game_state.castling & CASTLING_WH_MASK != 0 {
+            match get_type(piece) {
+                SQ_K => {
+                    if m.0 == pos("e1") {
+                        game_state.castling &= !CASTLING_WH_MASK;
+                    }
+                }
+                SQ_R => {
+                    if m.0 == pos("a1") {
+                        game_state.castling &= !CASTLING_WH_Q;
+                    } else if m.0 == pos("h1") {
+                        game_state.castling &= !CASTLING_WH_K;
+                    }
+                }
+                _ => {}
+            }
+        } else if is_black(piece) && game_state.castling & CASTLING_BL_MASK != 0 {
+            match get_type(piece) {
+                SQ_K => {
+                    if m.0 == pos("e8") {
+                        game_state.castling &= !CASTLING_BL_MASK;
+                    }
+                }
+                SQ_R => {
+                    if m.0 == pos("a8") {
+                        game_state.castling &= !CASTLING_BL_Q;
+                    } else if m.0 == pos("h8") {
+                        game_state.castling &= !CASTLING_BL_K;
+                    }
+                }
+                _ => {}
+            }
+        }
     }
 }
 
@@ -141,6 +179,7 @@ pub fn get_castle_move(castle: u8) -> Move {
         _ => panic!("Illegal castling requested: {:08b}", castle),
     }
 }
+
 
 /// Get a list of moves for all pieces of the playing color.
 ///

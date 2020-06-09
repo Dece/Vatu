@@ -175,22 +175,19 @@ impl Uci {
                 self.setup_engine();
             },
             UciCmd::Debug(on) => {
-                let args = engine::Cmd::UciDebug(*on);
-                self.engine_in.as_ref().unwrap().send(args).unwrap();
+                self.send_engine_command(engine::Cmd::UciDebug(*on));
             }
             UciCmd::IsReady => if self.state == State::Ready { self.send_ready() },
             UciCmd::UciNewGame => if self.state == State::Ready { /* Nothing to do. */ },
             UciCmd::Position(args) => if self.state == State::Ready {
-                let args = engine::Cmd::UciPosition(args.to_vec());
-                self.engine_in.as_ref().unwrap().send(args).unwrap();
+                self.send_engine_command(engine::Cmd::UciPosition(args.to_vec()));
             },
             UciCmd::Go(args) => if self.state == State::Ready {
-                let args = engine::Cmd::UciGo(args.to_vec());
-                self.engine_in.as_ref().unwrap().send(args).unwrap();
+                self.send_engine_command(engine::Cmd::UciGo(args.to_vec()));
                 self.state = State::Working;
             }
             UciCmd::Stop => if self.state == State::Working {
-                self.engine_in.as_ref().unwrap().send(engine::Cmd::Stop).unwrap();
+                self.send_engine_command(engine::Cmd::Stop);
             },
             UciCmd::Quit => return false,
             UciCmd::Unknown(c) => { self.log(format!("Unknown command: {}", c)); }
@@ -226,6 +223,7 @@ impl Uci {
         self.send("uciok");
     }
 
+    /// Setup engine for UCI.
     fn setup_engine(&mut self) {
         let uci_s = self.cmd_channel.0.clone();
         thread::spawn(move || {
@@ -233,6 +231,15 @@ impl Uci {
             engine.setup_uci(uci_s);
         });
         self.state = State::Ready;
+    }
+
+    /// Send a command to the engine if it is has been setup, else log an error.
+    fn send_engine_command(&mut self, cmd: engine::Cmd) {
+        if let Some(tx) = self.engine_in.as_ref() {
+            tx.send(cmd).unwrap();
+        } else {
+            self.log("Attempt to send command to offline engine.".to_string());
+        }
     }
 
     /// Notify interface that it is ready.
