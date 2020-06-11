@@ -233,7 +233,7 @@ pub fn draw(board: &Board, f: &mut dyn std::io::Write) {
         }
         writeln!(f, "{} {}", r + 1, rank).unwrap();
     }
-    writeln!(f, "  abcdefgh").unwrap();
+    write!(f, "  abcdefgh").unwrap();
 }
 
 /// Storage for precomputed board pieces stats.
@@ -271,6 +271,19 @@ impl BoardStats {
         self.num_backward_pawns = 0;
         self.num_isolated_pawns = 0;
         self.mobility = 0;
+    }
+}
+
+impl std::fmt::Display for BoardStats {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(
+            f,
+            "{}P {}B {}N {}R {}Q {}K {}dp {}bp {}ip {}m",
+            self.num_pawns, self.num_bishops, self.num_knights, self.num_rooks,
+            self.num_queens, self.num_kings,
+            self.num_doubled_pawns, self.num_backward_pawns, self.num_isolated_pawns,
+            self.mobility
+        )
     }
 }
 

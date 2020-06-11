@@ -75,6 +75,10 @@ pub fn parse_fen_fields(fields: &[&str]) -> Option<Fen> {
     })
 }
 
+pub fn en_passant_to_string(ep: Option<board::Pos>) -> String {
+    ep.and_then(|p| Some(board::pos_string(&p))).unwrap_or("-".to_string())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -1,6 +1,7 @@
 //! Functions to determine legal moves.
 
 use crate::board::*;
+use crate::notation;
 
 /// Characteristics of the state of a game.
 ///
@@ -27,6 +28,21 @@ impl GameState {
             halfmove: 0,
             fullmove: 1,
         }
+    }
+}
+
+impl std::fmt::Display for GameState {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(
+            f,
+            "- color: {}\n\
+             - castling: {:04b}\n\
+             - en_passant: {}\n\
+             - halfmove: {}\n\
+             - fullmove: {}",
+            self.color, self.castling, notation::en_passant_to_string(self.en_passant),
+            self.halfmove, self.fullmove
+        )
     }
 }
 

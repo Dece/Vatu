@@ -54,6 +54,22 @@ impl std::fmt::Debug for Node {
     }
 }
 
+impl std::fmt::Display for Node {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        let mut s = vec!();
+        board::draw(&self.board, &mut s);
+        let board_drawing = String::from_utf8_lossy(&s).to_string();
+        write!(
+            f,
+            "* Board:\n{}\n\
+             * Game state:\n{}\n\
+             * White statistics:\n{}\n\
+             * Black statistics:\n{}",
+            board_drawing, self.game_state, self.stats.0, self.stats.1
+        )
+    }
+}
+
 /// Engine communication mode.
 enum Mode {
     /// No mode, sit here and do nothing.
