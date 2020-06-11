@@ -57,23 +57,33 @@ impl std::fmt::Display for BoardStats {
 /// Create two new BoardStats objects from the board, for white and black.
 ///
 /// See `compute_stats_into` for details.
-pub fn compute_stats(board: &Board) -> (BoardStats, BoardStats) {
+pub fn compute_stats(board: &Board, game_state: &rules::GameState) -> (BoardStats, BoardStats) {
     let mut stats = (BoardStats::new(), BoardStats::new());
-    compute_stats_into(board, &mut stats);
+    compute_stats_into(board, game_state, &mut stats);
     stats
 }
 
-pub fn compute_stats_into(board: &Board, stats: &mut (BoardStats, BoardStats)) {
-    compute_color_stats_into(board, &mut stats.0, SQ_WH);
-    compute_color_stats_into(board, &mut stats.1, SQ_BL);
+pub fn compute_stats_into(
+    board: &Board,
+    game_state: &rules::GameState,
+    stats: &mut (BoardStats, BoardStats)
+) {
+    compute_color_stats_into(board, game_state, &mut stats.0, SQ_WH);
+    compute_color_stats_into(board, game_state, &mut stats.1, SQ_BL);
 }
 
 /// Update `stats` for `color` from given `board`
 ///
 /// Refresh all stats *except* `mobility`.
-pub fn compute_color_stats_into(board: &Board, stats: &mut BoardStats, color: u8) {
+pub fn compute_color_stats_into(
+    board: &Board,
+    game_state: &rules::GameState,
+    stats: &mut BoardStats,
+    color: u8
+) {
     stats.reset();
-    for (piece, (pos_f, pos_r)) in get_piece_iterator(board) {
+    for (piece, p) in get_piece_iterator(board) {
+        let (pos_f, pos_r) = p;
         if piece == SQ_E || !is_color(piece, color) {
             continue
         }
@@ -153,7 +163,7 @@ pub fn compute_color_stats_into(board: &Board, stats: &mut BoardStats, color: u8
             _ => {}
         }
         // Compute mobility for all pieces.
-        // stats.mobility += 
+        stats.mobility += rules::get_piece_moves(board, &p, game_state, true).len() as i32;
     }
 }
 
@@ -165,6 +175,7 @@ mod tests {
     fn test_compute_stats() {
         // Check that initial stats are correct.
         let b = new();
+        let gs = rules::GameState::new();
         let initial_stats = BoardStats {
             num_pawns: 8,
             num_bishops: 2,
@@ -175,9 +186,11 @@ mod tests {
             num_doubled_pawns: 0,
             num_backward_pawns: 0,
             num_isolated_pawns: 0,
-            mobility: 0,
+            mobility: 20,
         };
-        let mut stats = compute_stats(&b);
+        let mut stats = compute_stats(&b, &gs);
+        eprintln!("{}", stats.0);
+        eprintln!("{}", stats.1);
         assert!(stats.0 == stats.1);
         assert!(stats.0 == initial_stats);
 
@@ -185,15 +198,15 @@ mod tests {
         let mut b = new_empty();
         set_square(&mut b, &pos("d4"), SQ_WH_P);
         set_square(&mut b, &pos("d6"), SQ_WH_P);
-        compute_color_stats_into(&b, &mut stats.0, SQ_WH);
+        compute_color_stats_into(&b, &gs, &mut stats.0, SQ_WH);
         assert_eq!(stats.0.num_doubled_pawns, 2);
         // Add a pawn on another file, no changes expected.
         set_square(&mut b, &pos("e6"), SQ_WH_P);
-        compute_color_stats_into(&b, &mut stats.0, SQ_WH);
+        compute_color_stats_into(&b, &gs, &mut stats.0, SQ_WH);
         assert_eq!(stats.0.num_doubled_pawns, 2);
         // Add a pawn backward in the d-file: there are now 3 doubled pawns.
         set_square(&mut b, &pos("d2"), SQ_WH_P);
-        compute_color_stats_into(&b, &mut stats.0, SQ_WH);
+        compute_color_stats_into(&b, &gs, &mut stats.0, SQ_WH);
         assert_eq!(stats.0.num_doubled_pawns, 3);
 
         // Check that isolated and backward pawns are correctly counted.
@@ -201,19 +214,19 @@ mod tests {
         assert_eq!(stats.0.num_backward_pawns, 2);  // A bit weird?
         // Protect d4 pawn with a friend in e3: it is not isolated nor backward anymore.
         set_square(&mut b, &pos("e3"), SQ_WH_P);
-        compute_color_stats_into(&b, &mut stats.0, SQ_WH);
+        compute_color_stats_into(&b, &gs, &mut stats.0, SQ_WH);
         assert_eq!(stats.0.num_doubled_pawns, 5);
         assert_eq!(stats.0.num_isolated_pawns, 0);
         assert_eq!(stats.0.num_backward_pawns, 1);
         // Add an adjacent friend to d2 pawn: no pawns are left isolated or backward.
         set_square(&mut b, &pos("c2"), SQ_WH_P);
-        compute_color_stats_into(&b, &mut stats.0, SQ_WH);
+        compute_color_stats_into(&b, &gs, &mut stats.0, SQ_WH);
         assert_eq!(stats.0.num_doubled_pawns, 5);
         assert_eq!(stats.0.num_isolated_pawns, 0);
         assert_eq!(stats.0.num_backward_pawns, 0);
         // Add an isolated/backward white pawn in a far file.
         set_square(&mut b, &pos("a2"), SQ_WH_P);
-        compute_color_stats_into(&b, &mut stats.0, SQ_WH);
+        compute_color_stats_into(&b, &gs, &mut stats.0, SQ_WH);
         assert_eq!(stats.0.num_doubled_pawns, 5);
         assert_eq!(stats.0.num_isolated_pawns, 1);
         assert_eq!(stats.0.num_backward_pawns, 1);
@@ -224,7 +237,7 @@ mod tests {
         set_square(&mut b, &pos("d4"), SQ_WH_P);
         set_square(&mut b, &pos("e5"), SQ_WH_P);
         set_square(&mut b, &pos("e3"), SQ_WH_P);
-        compute_color_stats_into(&b, &mut stats.0, SQ_WH);
+        compute_color_stats_into(&b, &gs, &mut stats.0, SQ_WH);
         assert_eq!(stats.0.num_doubled_pawns, 2);
         assert_eq!(stats.0.num_isolated_pawns, 0);
         assert_eq!(stats.0.num_backward_pawns, 1);

@@ -308,7 +308,7 @@ fn analyze(
         tx.send(Cmd::Log(moves_str)).unwrap();
     }
 
-    let (max_score, best_move) = minimax(node, 0, 3, board::is_white(node.game_state.color));
+    let (max_score, best_move) = minimax(node, 0, 2, board::is_white(node.game_state.color));
 
     if best_move.is_some() {
         let log_str = format!(
@@ -343,7 +343,7 @@ fn minimax(
     maximizing: bool
 ) -> (f32, Option<rules::Move>) {
     if depth == max_depth {
-        let stats = stats::compute_stats(&node.board);
+        let stats = stats::compute_stats(&node.board, &node.game_state);
         return (evaluate(&stats), None);
     }
     let mut minmax = if maximizing { MIN_F32 } else { MAX_F32 };
@@ -417,11 +417,11 @@ mod tests {
     #[test]
     fn test_evaluate() {
         let mut node = Node::new();
-        let stats = stats::compute_stats(&node.board);
+        let stats = stats::compute_stats(&node.board, &node.game_state);
         assert_eq!(evaluate(&stats), 0.0);
 
-        rules::apply_move_to_board(&mut node.board, &notation::parse_move("d2d4"));
-        let stats = stats::compute_stats(&node.board);
+        rules::apply_move_to(&mut node.board, &mut node.game_state, &notation::parse_move("d2d4"));
+        let stats = stats::compute_stats(&node.board, &node.game_state);
         assert_eq!(evaluate(&stats), 0.0);
     }
 }
