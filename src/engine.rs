@@ -2,7 +2,6 @@
 
 use std::sync::{Arc, atomic, mpsc};
 use std::thread;
-use std::time;
 
 use crate::board;
 use crate::notation;
@@ -26,15 +25,13 @@ pub struct Engine {
     working: Arc<atomic::AtomicBool>,
 }
 
-/// Analysis node: a board along with the game state and some stats.
+/// Analysis node: a board along with the game state.
 #[derive(Clone)]
 struct Node {
     /// Board for this node.
     board: board::Board,
     /// Game state.
     game_state: rules::GameState,
-    /// White and black pieces stats; have to be recomputed if board changes.
-    stats: (board::BoardStats, board::BoardStats),  // white and black pieces stats
 }
 
 impl Node {
@@ -42,7 +39,6 @@ impl Node {
         Node {
             board: board::new_empty(),
             game_state: rules::GameState::new(),
-            stats: (board::BoardStats::new(), board::BoardStats::new()),
         }
     }
 }
@@ -51,8 +47,8 @@ impl std::fmt::Debug for Node {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         write!(
             f,
-            "Node {{ board: [...], game_state: {:?}, stats: {:?} }}",
-            self.game_state, self.stats
+            "Node {{ board: [...], game_state: {:?} }}",
+            self.game_state
         )
     }
 }
@@ -65,10 +61,8 @@ impl std::fmt::Display for Node {
         write!(
             f,
             "* Board:\n{}\n\
-             * Game state:\n{}\n\
-             * White statistics:\n{}\n\
-             * Black statistics:\n{}",
-            board_drawing, self.game_state, self.stats.0, self.stats.1
+             * Game state:\n{}",
+            board_drawing, self.game_state
         )
     }
 }
@@ -227,10 +221,6 @@ impl Engine {
     ///
     /// Stop working after `movetime` ms, or go on forever if it's -1.
     fn work(&mut self, args: &WorkArgs) {
-        if self.debug {
-            self.reply(Cmd::Log(format!("Current evaluation: {}", evaluate(&self.node.stats))));
-        }
-
         self.working.store(true, atomic::Ordering::Relaxed);
         let mut node = self.node.clone();
         let args = args.clone();
@@ -274,7 +264,6 @@ impl Engine {
                 }
             }
         }
-        board::compute_stats_into(&self.node.board, &mut self.node.stats);
     }
 
     /// Start working using parameters passed with a "go" command.
@@ -353,8 +342,8 @@ fn minimax(
     maximizing: bool
 ) -> (f32, Option<rules::Move>) {
     if depth == max_depth {
-        board::compute_stats_into(&node.board, &mut node.stats);
-        return (evaluate(&node.stats), None);
+        let stats = board::compute_stats(&node.board);
+        return (evaluate(&stats), None);
     }
     let mut minmax = if maximizing { MIN_F32 } else { MAX_F32 };
     let mut minmax_move = None;
