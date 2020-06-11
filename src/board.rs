@@ -59,6 +59,15 @@ pub const fn is_piece(square: u8, piece: u8) -> bool { has_flag(square, piece) }
 #[inline]
 pub const fn opposite(color: u8) -> u8 { color ^ SQ_COLOR_MASK }
 
+/// Pretty-print a color.
+pub fn color_to_string(color: u8) -> String {
+    match color {
+        SQ_WH => "white".to_string(),
+        SQ_BL => "black".to_string(),
+        _ => panic!("Unknown color {}", color),
+    }
+}
+
 /// Minimum allowed value for stored Pos components.
 pub const POS_MIN: i8 = 0;
 /// Maximum allowed value for stored Pos components.

@@ -40,7 +40,8 @@ impl std::fmt::Display for GameState {
              - en_passant: {}\n\
              - halfmove: {}\n\
              - fullmove: {}",
-            self.color, self.castling, notation::en_passant_to_string(self.en_passant),
+            color_to_string(self.color), self.castling,
+            notation::en_passant_to_string(self.en_passant),
             self.halfmove, self.fullmove
         )
     }
