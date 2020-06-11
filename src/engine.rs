@@ -6,6 +6,7 @@ use std::thread;
 use crate::board;
 use crate::notation;
 use crate::rules;
+use crate::stats;
 use crate::uci;
 
 const MIN_F32: f32 = std::f32::NEG_INFINITY;
@@ -342,7 +343,7 @@ fn minimax(
     maximizing: bool
 ) -> (f32, Option<rules::Move>) {
     if depth == max_depth {
-        let stats = board::compute_stats(&node.board);
+        let stats = stats::compute_stats(&node.board);
         return (evaluate(&stats), None);
     }
     let mut minmax = if maximizing { MIN_F32 } else { MAX_F32 };
@@ -368,7 +369,7 @@ fn minimax(
     (minmax, minmax_move)
 }
 
-fn evaluate(stats: &(board::BoardStats, board::BoardStats)) -> f32 {
+fn evaluate(stats: &(stats::BoardStats, stats::BoardStats)) -> f32 {
     let (ws, bs) = stats;
 
     200.0 * (ws.num_kings - bs.num_kings) as f32
@@ -416,11 +417,11 @@ mod tests {
     #[test]
     fn test_evaluate() {
         let mut node = Node::new();
-        let stats = board::compute_stats(&node.board);
+        let stats = stats::compute_stats(&node.board);
         assert_eq!(evaluate(&stats), 0.0);
 
         rules::apply_move_to_board(&mut node.board, &notation::parse_move("d2d4"));
-        let stats = board::compute_stats(&node.board);
+        let stats = stats::compute_stats(&node.board);
         assert_eq!(evaluate(&stats), 0.0);
     }
 }

@@ -6,6 +6,7 @@ pub mod board;
 pub mod engine;
 pub mod notation;
 pub mod rules;
+pub mod stats;
 pub mod uci;
 
 fn main() {
