@@ -39,7 +39,14 @@ pub const CASTLING_BL_MASK: u8 = 0b00001100;
 pub const CASTLING_K_MASK: u8  = 0b00000101;
 pub const CASTLING_Q_MASK: u8  = 0b00001010;
 pub const CASTLING_MASK: u8    = 0b00001111;
-pub const CASTLING_SIDES: [(i8, u8); 2] = [(5i8, CASTLING_K_MASK), (3i8, CASTLING_Q_MASK)];
+
+/// Castling sides parameters.
+///
+/// For both sides, the 3-uple contains files that should be empty
+/// and not attacked, an optional file that should be empty for
+/// queen-side, and the castling side-mask.
+pub const CASTLING_SIDES: [([i8; 2], Option<i8>, u8); 2] =
+    [([5i8, 6i8], None, CASTLING_K_MASK), ([3i8, 2i8], Some(1i8), CASTLING_Q_MASK)];
 
 pub const START_WH_K_POS: Pos = pos("e1");
 pub const START_BL_K_POS: Pos = pos("e8");
@@ -447,23 +454,38 @@ fn get_king_moves(
     };
 
     // Check for castling if the king is on its castling rank (R1)
-    // and is not in check (R4)
+    // and is not in check (R4).
     if
         *r == castling_rank &&
         !is_attacked(board, game_state, at)
     {
         // Check for both castling sides.
-        for (through_f, castling_side_mask) in CASTLING_SIDES.iter() {
+        for (path_files, opt_empty_file, castling_side_mask) in CASTLING_SIDES.iter() {
             // Check for castling availability for this color and side.
             if (game_state.castling & castling_color_mask & castling_side_mask) != 0 {
-                // R3, R5, R6: check that files on the way are empty and not attacked.
-                let p = (*through_f, castling_rank);
-                if is_empty(board, &p) && !is_illegal(board, game_state, &(*at, p, None)) {
-                    let castle = CASTLING_K_MASK & castling_color_mask;
-                    let m = get_castle_move(castle);
-                    if can_register(commit, board, game_state, &m) {
-                        moves.push(m);
+                // Check that squares in the king's path are empty and not attacked (R3.1, R5, R6).
+                let mut path_is_clear = true;
+                for path_f in path_files {
+                    let p = (*path_f, castling_rank);
+                    if !is_empty(board, &p) || is_illegal(board, game_state, &(*at, p, None)) {
+                        path_is_clear = false;
+                        break;
                     }
+                }
+                if !path_is_clear {
+                    continue;
+                }
+                // Check that rook jumps over an empty square on queen-side (R3.2).
+                if let Some(rook_path_f) = opt_empty_file {
+                    let p = (*rook_path_f, castling_rank);
+                    if !is_empty(board, &p) {
+                        continue;
+                    }
+                }
+                let castle = castling_side_mask & castling_color_mask;
+                let m = get_castle_move(castle);
+                if can_register(commit, board, game_state, &m) {
+                    moves.push(m);
                 }
             }
         }
