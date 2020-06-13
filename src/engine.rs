@@ -1,71 +1,31 @@
 //! Vatu engine.
+//!
+//! Hold the various data needed to perform a game analysis,
+//! but actual analysis code is in the `analysis` module.
 
 use std::sync::{Arc, atomic, mpsc};
 use std::thread;
 
+use crate::analysis;
 use crate::board;
 use crate::notation;
 use crate::rules;
-use crate::stats;
 use crate::uci;
-
-const MIN_F32: f32 = std::f32::NEG_INFINITY;
-const MAX_F32: f32 = std::f32::INFINITY;
 
 /// Analysis engine.
 pub struct Engine {
     /// Debug mode, log some data.
     debug: bool,
     /// Current game state, starting point of further analysis.
-    node: Node,
+    node: analysis::Node,
+    /// Store already evaluated nodes with their score.
+    // score_map: Arc<RwLock<HashMap<Node, f32>>>,
     /// Communication mode.
     mode: Mode,
     /// If true, the engine is currently listening to incoming cmds.
     listening: bool,
     /// Shared flag to notify workers if they should keep working.
     working: Arc<atomic::AtomicBool>,
-}
-
-/// Analysis node: a board along with the game state.
-#[derive(Clone)]
-struct Node {
-    /// Board for this node.
-    board: board::Board,
-    /// Game state.
-    game_state: rules::GameState,
-}
-
-impl Node {
-    fn new() -> Node {
-        Node {
-            board: board::new_empty(),
-            game_state: rules::GameState::new(),
-        }
-    }
-}
-
-impl std::fmt::Debug for Node {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write!(
-            f,
-            "Node {{ board: [...], game_state: {:?} }}",
-            self.game_state
-        )
-    }
-}
-
-impl std::fmt::Display for Node {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        let mut s = vec!();
-        board::draw(&self.board, &mut s);
-        let board_drawing = String::from_utf8_lossy(&s).to_string();
-        write!(
-            f,
-            "* Board:\n{}\n\
-             * Game state:\n{}",
-            board_drawing, self.game_state
-        )
-    }
 }
 
 /// Engine communication mode.
@@ -105,16 +65,6 @@ pub enum Cmd {
     Info(Vec<Info>),
 }
 
-/// Parameters for starting work.
-#[derive(Clone)]
-struct WorkArgs {
-    move_time: i32,
-    white_time: i32,
-    black_time: i32,
-    white_inc: i32,
-    black_inc: i32,
-}
-
 /// Information to be transmitted back to whatever is listening.
 #[derive(Debug, Clone)]
 pub enum Info {
@@ -126,7 +76,8 @@ impl Engine {
     pub fn new() -> Engine {
         Engine {
             debug: false,
-            node: Node::new(),
+            node: analysis::Node::new(),
+            // score_map: HashMap::with_capacity(2usize.pow(10)),
             mode: Mode::No,
             listening: false,
             working: Arc::new(atomic::AtomicBool::new(false)),
@@ -168,6 +119,7 @@ impl Engine {
         }
     }
 
+    /// Send a command back to the controlling interface.
     fn reply(&mut self, cmd: Cmd) {
         match &self.mode {
             Mode::Uci(tx, _, _) => {
@@ -210,10 +162,12 @@ impl Engine {
         self.node.game_state.fullmove = fen.fullmove.parse::<i32>().ok().unwrap();
     }
 
+    /// Apply a series of moves to the current node.
     fn apply_moves(&mut self, moves: &Vec<rules::Move>) {
         moves.iter().for_each(|m| self.apply_move(m));
     }
 
+    /// Apply a move to the current node.
     fn apply_move(&mut self, m: &rules::Move) {
         rules::apply_move_to(&mut self.node.board, &mut self.node.game_state, m);
     }
@@ -221,7 +175,7 @@ impl Engine {
     /// Start working on board, returning the best move found.
     ///
     /// Stop working after `movetime` ms, or go on forever if it's -1.
-    fn work(&mut self, args: &WorkArgs) {
+    fn work(&mut self, args: &analysis::AnalysisParams) {
         self.working.store(true, atomic::Ordering::Relaxed);
         let mut node = self.node.clone();
         let args = args.clone();
@@ -229,10 +183,11 @@ impl Engine {
         let tx = match &self.mode { Mode::Uci(_, _, tx) => tx.clone(), _ => return };
         let debug = self.debug;
         thread::spawn(move || {
-            analyze(&mut node, &args, working, tx, debug);
+            analysis::analyze(&mut node, &args, working, tx, debug);
         });
     }
 
+    /// Unset the work flag, stopping workers.
     fn stop(&mut self) {
         self.working.store(false, atomic::Ordering::SeqCst);
     }
@@ -269,7 +224,7 @@ impl Engine {
 
     /// Start working using parameters passed with a "go" command.
     fn uci_go(&mut self, g_args: &Vec<uci::GoArgs>) {
-        let mut args = WorkArgs {
+        let mut args = analysis::AnalysisParams {
             move_time: -1,
             white_time: -1,
             black_time: -1,
@@ -288,140 +243,5 @@ impl Engine {
             }
         }
         self.work(&args);
-    }
-}
-
-fn analyze(
-    node: &mut Node,
-    _args: &WorkArgs,
-    working: Arc<atomic::AtomicBool>,
-    tx: mpsc::Sender<Cmd>,
-    debug: bool,
-) {
-    if !working.load(atomic::Ordering::Relaxed) {
-        return;
-    }
-    if debug {
-        tx.send(Cmd::Log(format!("\tAnalyzing node:\n{}", node))).unwrap();
-        let moves = rules::get_player_moves(&node.board, &node.game_state, true);
-        let moves_str = format!("\tLegal moves: {}", notation::move_list_to_string(&moves));
-        tx.send(Cmd::Log(moves_str)).unwrap();
-    }
-
-    let (max_score, best_move) = minimax(node, 0, 2, board::is_white(node.game_state.color));
-
-    if best_move.is_some() {
-        let log_str = format!(
-            "\tBest move {} evaluated {}",
-            notation::move_to_string(&best_move.unwrap()), max_score
-        );
-        tx.send(Cmd::Log(log_str)).unwrap();
-        tx.send(Cmd::TmpBestMove(best_move)).unwrap();
-    } else {
-        // If no best move could be found, checkmate is unavoidable; send the first legal move.
-        tx.send(Cmd::Log("Checkmate is unavoidable.".to_string())).unwrap();
-        let moves = rules::get_player_moves(&node.board, &node.game_state, true);
-        let m = if moves.len() > 0 { Some(moves[0]) } else { None };
-        tx.send(Cmd::TmpBestMove(m)).unwrap();
-    }
-
-    // thread::sleep(time::Duration::from_secs(1));
-    // for _ in 0..4 {
-    //     let board = board.clone();
-    //     let wip = wip.clone();
-    //     thread::spawn(move || {
-    //         analyze(&board, wip);
-    //     });
-    // }
-
-}
-
-fn minimax(
-    node: &mut Node,
-    depth: u32,
-    max_depth: u32,
-    maximizing: bool
-) -> (f32, Option<rules::Move>) {
-    if depth == max_depth {
-        let stats = stats::compute_stats(&node.board, &node.game_state);
-        return (evaluate(&stats), None);
-    }
-    let mut minmax = if maximizing { MIN_F32 } else { MAX_F32 };
-    let mut minmax_move = None;
-    let moves = rules::get_player_moves(&node.board, &node.game_state, true);
-    for m in moves {
-        let mut sub_node = node.clone();
-        rules::apply_move_to(&mut sub_node.board, &mut sub_node.game_state, &m);
-        if maximizing {
-            let (score, _) = minimax(&mut sub_node, depth + 1, max_depth, false);
-            if score > minmax {
-                minmax = score;
-                minmax_move = Some(m);
-            }
-        } else {
-            let (score, _) = minimax(&mut sub_node, depth + 1, max_depth, true);
-            if score < minmax {
-                minmax = score;
-                minmax_move = Some(m);
-            }
-        }
-    }
-    (minmax, minmax_move)
-}
-
-fn evaluate(stats: &(stats::BoardStats, stats::BoardStats)) -> f32 {
-    let (ws, bs) = stats;
-
-    200.0 * (ws.num_kings - bs.num_kings) as f32
-    + 9.0 * (ws.num_queens - bs.num_queens) as f32
-    + 5.0 * (ws.num_rooks - bs.num_rooks) as f32
-    + 3.0 * (ws.num_bishops - bs.num_bishops) as f32
-    + 3.0 * (ws.num_knights - bs.num_knights) as f32
-    + (ws.num_pawns - bs.num_pawns) as f32
-    - 0.5 * (
-        ws.num_doubled_pawns - bs.num_doubled_pawns +
-        ws.num_isolated_pawns - bs.num_isolated_pawns +
-        ws.num_backward_pawns - bs.num_backward_pawns
-    ) as f32
-    + 0.1 * (ws.mobility - bs.mobility) as f32
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use board::pos;
-
-    #[test]
-    fn test_minimax() {
-        let mut node = Node::new();
-        node.game_state.castling = 0;
-
-        // White mates in 1 move, queen to d7.
-        board::set_square(&mut node.board, &pos("a1"), board::SQ_WH_K);
-        board::set_square(&mut node.board, &pos("c6"), board::SQ_WH_P);
-        board::set_square(&mut node.board, &pos("h7"), board::SQ_WH_Q);
-        board::set_square(&mut node.board, &pos("d8"), board::SQ_BL_K);
-        let (_, m) = minimax(&mut node, 0, 2, true);
-        assert_eq!(m.unwrap(), notation::parse_move("h7d7"));
-
-        // Check that it works for black as well.
-        board::set_square(&mut node.board, &pos("a1"), board::SQ_BL_K);
-        board::set_square(&mut node.board, &pos("c6"), board::SQ_BL_P);
-        board::set_square(&mut node.board, &pos("h7"), board::SQ_BL_Q);
-        board::set_square(&mut node.board, &pos("d8"), board::SQ_WH_K);
-        node.game_state.color = board::SQ_BL;
-        let (_, m) = minimax(&mut node, 0, 2, true);
-        assert_eq!(m.unwrap(), notation::parse_move("h7d7"));
-    }
-
-    #[test]
-    fn test_evaluate() {
-        let mut node = Node::new();
-        let stats = stats::compute_stats(&node.board, &node.game_state);
-        assert_eq!(evaluate(&stats), 0.0);
-
-        rules::apply_move_to(&mut node.board, &mut node.game_state, &notation::parse_move("d2d4"));
-        let stats = stats::compute_stats(&node.board, &node.game_state);
-        assert_eq!(evaluate(&stats), 0.0);
     }
 }

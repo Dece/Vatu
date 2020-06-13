@@ -82,12 +82,14 @@ pub fn compute_color_stats_into(
     color: u8
 ) {
     stats.reset();
+    // Compute mobility for all pieces.
+    stats.mobility = rules::get_player_moves(board, game_state, true).len() as i32;
+    // Compute amount of each piece.
     for (piece, p) in get_piece_iterator(board) {
         let (pos_f, pos_r) = p;
         if piece == SQ_E || !is_color(piece, color) {
             continue
         }
-        // For all piece types, increment its number. Pawns have a few additional stats.
         match get_type(piece) {
             SQ_R => stats.num_rooks += 1,
             SQ_N => stats.num_knights += 1,
@@ -162,8 +164,6 @@ pub fn compute_color_stats_into(
             },
             _ => {}
         }
-        // Compute mobility for all pieces.
-        stats.mobility += rules::get_piece_moves(board, &p, game_state, true).len() as i32;
     }
 }
 

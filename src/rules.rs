@@ -10,7 +10,10 @@ use crate::notation;
 ///
 /// - `color`: current player's turn
 /// - `castling`: which castling options are available; updated throughout the game.
-#[derive(Debug, Clone)]
+/// - `en_passant`: position of a pawn that can be taken using en passant attack.
+/// - `halfmove`: eh not sure
+/// - `fullmove`: same
+#[derive(Debug, PartialEq, Clone, Hash)]
 pub struct GameState {
     pub color: u8,
     pub castling: u8,
@@ -283,9 +286,8 @@ fn get_pawn_moves(
         // Check diagonals for pieces to attack.
         if i == 1 {
             // First diagonal.
-            let df = f - 1;
-            if df >= POS_MIN {
-                let diag: Pos = (df, forward_r);
+            if f - 1 >= POS_MIN {
+                let diag: Pos = (f - 1, forward_r);
                 if let Some(m) = move_on_enemy(piece, at, get_square(board, &diag), &diag) {
                     if can_register(commit, board, game_state, &m) {
                         moves.push(m);
@@ -293,9 +295,8 @@ fn get_pawn_moves(
                 }
             }
             // Second diagonal.
-            let df = f + 1;
-            if df <= POS_MAX {
-                let diag: Pos = (df, forward_r);
+            if f + 1 <= POS_MAX {
+                let diag: Pos = (f + 1, forward_r);
                 if let Some(m) = move_on_enemy(piece, at, get_square(board, &diag), &diag) {
                     if can_register(commit, board, game_state, &m) {
                         moves.push(m);
@@ -317,14 +318,16 @@ fn get_bishop_moves(
 ) -> Vec<Move> {
     let (f, r) = at;
     let mut views = [true; 4];  // Store diagonals where a piece blocks commit.
-    let mut moves = vec!();
+    let mut moves = Vec::with_capacity(8);
     for dist in 1..=7 {
         for (dir, offset) in [(1, -1), (1, 1), (-1, 1), (-1, -1)].iter().enumerate() {
             if !views[dir] {
                 continue
             }
             let p = (f + offset.0 * dist, r + offset.1 * dist);
+            // If this position is out of the board, stop looking in that direction.
             if !is_valid_pos(p) {
+                views[dir] = false;
                 continue
             }
             if is_empty(board, &p) {
@@ -353,7 +356,7 @@ fn get_knight_moves(
     commit: bool,
 ) -> Vec<Move> {
     let (f, r) = at;
-    let mut moves = vec!();
+    let mut moves = Vec::with_capacity(8);
     for offset in [(1, 2), (2, 1), (2, -1), (1, -2), (-1, -2), (-2, -1), (-2, 1), (-1, 2)].iter() {
         let p = (f + offset.0, r + offset.1);
         if !is_valid_pos(p) {
@@ -381,7 +384,7 @@ fn get_rook_moves(
     commit: bool,
 ) -> Vec<Move> {
     let (f, r) = at;
-    let mut moves = vec!();
+    let mut moves = Vec::with_capacity(8);
     let mut views = [true; 4];  // Store lines where a piece blocks commit.
     for dist in 1..=7 {
         for (dir, offset) in [(0, 1), (1, 0), (0, -1), (-1, 0)].iter().enumerate() {
@@ -389,7 +392,9 @@ fn get_rook_moves(
                 continue
             }
             let p = (f + offset.0 * dist, r + offset.1 * dist);
+            // If this position is out of the board, stop looking in that direction.
             if !is_valid_pos(p) {
+                views[dir] = false;
                 continue
             }
             if is_empty(board, &p) {

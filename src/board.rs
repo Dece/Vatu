@@ -199,17 +199,6 @@ pub fn get_piece_iterator<'a>(board: &'a Board) -> Box<dyn Iterator<Item = (u8, 
     )
 }
 
-/// Count number of pieces on board. Used for debugging.
-pub fn num_pieces(board: &Board) -> u8 {
-    let mut count = 0;
-    for i in board.iter() {
-        if *i != SQ_E {
-            count += 1;
-        }
-    }
-    count
-}
-
 /// Find the king of `color`.
 pub fn find_king(board: &Board, color: u8) -> Option<Pos> {
     for f in 0..8 {
@@ -221,6 +210,17 @@ pub fn find_king(board: &Board, color: u8) -> Option<Pos> {
         }
     }
     None
+}
+
+/// Count number of pieces on board. Used for debugging.
+pub fn num_pieces(board: &Board) -> u8 {
+    let mut count = 0;
+    for i in board.iter() {
+        if *i != SQ_E {
+            count += 1;
+        }
+    }
+    count
 }
 
 /// Write a text view of the board. Used for debugging.
@@ -316,17 +316,17 @@ mod tests {
     }
 
     #[test]
-    fn test_num_pieces() {
-        assert_eq!(num_pieces(&new_empty()), 0);
-        assert_eq!(num_pieces(&new()), 32);
-    }
-
-    #[test]
     fn test_find_king() {
         let b = new_empty();
         assert_eq!(find_king(&b, SQ_WH), None);
         let b = new();
         assert_eq!(find_king(&b, SQ_WH), Some(pos("e1")));
         assert_eq!(find_king(&b, SQ_BL), Some(pos("e8")));
+    }
+
+    #[test]
+    fn test_num_pieces() {
+        assert_eq!(num_pieces(&new_empty()), 0);
+        assert_eq!(num_pieces(&new()), 32);
     }
 }

@@ -2,6 +2,7 @@ use std::process;
 
 use clap::{App, AppSettings, Arg, ArgMatches, SubCommand};
 
+pub mod analysis;
 pub mod board;
 pub mod engine;
 pub mod notation;
