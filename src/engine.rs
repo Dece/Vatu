@@ -3,15 +3,17 @@
 //! Hold the various data needed to perform a game analysis,
 //! but actual analysis code is in the `analysis` module.
 
-use std::sync::{Arc, atomic, mpsc};
+use std::sync::Arc;
+use std::sync::mpsc;
+use std::sync::atomic::{self, AtomicBool};
 use std::thread;
-
-use dashmap::DashMap;
 
 use crate::analysis;
 use crate::board;
+use crate::castling;
+use crate::movement::{self, Move};
+use crate::node::Node;
 use crate::notation;
-use crate::rules;
 use crate::uci;
 
 /// Analysis engine.
@@ -19,15 +21,13 @@ pub struct Engine {
     /// Debug mode, log some data.
     debug: bool,
     /// Current game state, starting point of further analysis.
-    node: analysis::Node,
-    /// Store already evaluated nodes with their score.
-    score_map: Arc<DashMap<analysis::Node, f32>>,
+    node: Node,
     /// Communication mode.
     mode: Mode,
     /// If true, the engine is currently listening to incoming cmds.
     listening: bool,
-    /// Shared flag to notify workers if they should keep working.
-    working: Arc<atomic::AtomicBool>,
+    /// flag to notify workers if they should keep working.
+    working: Arc<AtomicBool>,
 }
 
 /// Engine communication mode.
@@ -52,7 +52,7 @@ pub enum Cmd {
     UciPosition(Vec<uci::PositionArgs>),  // UCI "position" command.
     UciGo(Vec<uci::GoArgs>),              // UCI "go" command.
     Stop,                                 // Stop working ASAP.
-    TmpBestMove(Option<rules::Move>),  // Send best move found by analysis worker (TEMPORARY).
+    TmpBestMove(Option<Move>),  // Send best move found by analysis worker (TEMPORARY).
     WorkerInfo(Vec<Info>),                // Informations from a worker.
 
     // Commands that can be sent by the engine.
@@ -62,7 +62,7 @@ pub enum Cmd {
     /// the message to be forwarded to whatever can log.
     Log(String),
     /// Report found best move.
-    BestMove(Option<rules::Move>),
+    BestMove(Option<Move>),
     /// Report ongoing analysis information.
     Info(Vec<Info>),
 }
@@ -70,7 +70,7 @@ pub enum Cmd {
 /// Information to be transmitted back to whatever is listening.
 #[derive(Debug, Clone)]
 pub enum Info {
-    CurrentMove(rules::Move),
+    CurrentMove(Move),
 }
 
 /// General engine implementation.
@@ -78,11 +78,10 @@ impl Engine {
     pub fn new() -> Engine {
         Engine {
             debug: false,
-            node: analysis::Node::new(),
-            score_map: Arc::new(DashMap::with_capacity(2usize.pow(10))),
+            node: Node::new(),
             mode: Mode::No,
             listening: false,
-            working: Arc::new(atomic::AtomicBool::new(false)),
+            working: Arc::new(AtomicBool::new(false)),
         }
     }
 
@@ -146,10 +145,10 @@ impl Engine {
         // Castling.
         for c in fen.castling.chars() {
             match c {
-                'K' => self.node.game_state.castling |= rules::CASTLING_WH_K,
-                'Q' => self.node.game_state.castling |= rules::CASTLING_WH_Q,
-                'k' => self.node.game_state.castling |= rules::CASTLING_BL_K,
-                'q' => self.node.game_state.castling |= rules::CASTLING_BL_Q,
+                'K' => self.node.game_state.castling |= castling::CASTLING_WH_K,
+                'Q' => self.node.game_state.castling |= castling::CASTLING_WH_Q,
+                'k' => self.node.game_state.castling |= castling::CASTLING_BL_K,
+                'q' => self.node.game_state.castling |= castling::CASTLING_BL_Q,
                 _ => {}
             }
         }
@@ -165,13 +164,13 @@ impl Engine {
     }
 
     /// Apply a series of moves to the current node.
-    fn apply_moves(&mut self, moves: &Vec<rules::Move>) {
+    fn apply_moves(&mut self, moves: &Vec<Move>) {
         moves.iter().for_each(|m| self.apply_move(m));
     }
 
     /// Apply a move to the current node.
-    fn apply_move(&mut self, m: &rules::Move) {
-        rules::apply_move_to(&mut self.node.board, &mut self.node.game_state, m);
+    fn apply_move(&mut self, m: &Move) {
+        movement::apply_move_to(&mut self.node.board, &mut self.node.game_state, m);
     }
 
     /// Start working on board, returning the best move found.
@@ -179,14 +178,13 @@ impl Engine {
     /// Stop working after `movetime` ms, or go on forever if it's -1.
     fn work(&mut self, args: &analysis::AnalysisParams) {
         self.working.store(true, atomic::Ordering::Relaxed);
-        let mut node = self.node.clone();
         let args = args.clone();
-        let score_map = self.score_map.clone();
         let working = self.working.clone();
         let tx = match &self.mode { Mode::Uci(_, _, tx) => tx.clone(), _ => return };
-        let debug = self.debug;
+        let mut worker = analysis::Analyzer::new(self.node.clone(), tx);
+        worker.debug = self.debug;
         thread::spawn(move || {
-            analysis::analyze(&mut node, &args, &score_map, working, tx, debug);
+            worker.analyze(&args, working);
         });
     }
 

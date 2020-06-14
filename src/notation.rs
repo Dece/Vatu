@@ -1,45 +1,45 @@
 //! Functions using various notations.
 
-use crate::board;
-use crate::rules;
+use crate::board::*;
+use crate::movement::Move;
 
 pub const NULL_MOVE: &str = "0000";
 
 /// Create a string containing the UCI algebraic notation of this move.
-pub fn move_to_string(m: &rules::Move) -> String {
+pub fn move_to_string(m: &Move) -> String {
     let mut move_string = String::new();
-    move_string.push_str(&board::pos_string(&m.0));
-    move_string.push_str(&board::pos_string(&m.1));
+    move_string.push_str(&pos_string(&m.0));
+    move_string.push_str(&pos_string(&m.1));
     if let Some(prom) = m.2 {
         move_string.push(match prom {
-            board::SQ_Q => 'q',
-            board::SQ_B => 'b',
-            board::SQ_N => 'n',
-            board::SQ_R => 'r',
+            SQ_Q => 'q',
+            SQ_B => 'b',
+            SQ_N => 'n',
+            SQ_R => 'r',
             _ => panic!("What are you doing? Promote to a legal piece.")
         });
     }
     move_string
 }
 
-/// Parse an UCI move algebraic notation string to a rules::Move.
-pub fn parse_move(m_str: &str) -> rules::Move {
+/// Parse an UCI move algebraic notation string to a Move.
+pub fn parse_move(m_str: &str) -> Move {
     let prom = if m_str.len() == 5 {
         Some(match m_str.as_bytes()[4] {
-            b'b' => board::SQ_B,
-            b'n' => board::SQ_N,
-            b'r' => board::SQ_R,
-            b'q' => board::SQ_Q,
+            b'b' => SQ_B,
+            b'n' => SQ_N,
+            b'r' => SQ_R,
+            b'q' => SQ_Q,
             _ => panic!("What is the opponent doing? This is illegal, I'm out."),
         })
     } else {
         None
     };
-    (board::pos(&m_str[0..2]), board::pos(&m_str[2..4]), prom)
+    (pos(&m_str[0..2]), pos(&m_str[2..4]), prom)
 }
 
 /// Create a space-separated string of moves. Used for debugging.
-pub fn move_list_to_string(moves: &Vec<rules::Move>) -> String {
+pub fn move_list_to_string(moves: &Vec<Move>) -> String {
     moves.iter().map(|m| move_to_string(m)).collect::<Vec<_>>().join(" ")
 }
 
@@ -75,8 +75,8 @@ pub fn parse_fen_fields(fields: &[&str]) -> Option<Fen> {
     })
 }
 
-pub fn en_passant_to_string(ep: Option<board::Pos>) -> String {
-    ep.and_then(|p| Some(board::pos_string(&p))).unwrap_or("-".to_string())
+pub fn en_passant_to_string(ep: Option<Pos>) -> String {
+    ep.and_then(|p| Some(pos_string(&p))).unwrap_or("-".to_string())
 }
 
 #[cfg(test)]
@@ -87,15 +87,15 @@ mod tests {
     fn test_move_to_string() {
         assert_eq!(move_to_string(&((0, 0), (3, 3), None)), "a1d4");
         assert_eq!(move_to_string(&((7, 7), (0, 7), None)), "h8a8");
-        assert_eq!(move_to_string(&((7, 6), (7, 7), Some(board::SQ_Q))), "h7h8q");
-        assert_eq!(move_to_string(&((7, 6), (7, 7), Some(board::SQ_N))), "h7h8n");
+        assert_eq!(move_to_string(&((7, 6), (7, 7), Some(SQ_Q))), "h7h8q");
+        assert_eq!(move_to_string(&((7, 6), (7, 7), Some(SQ_N))), "h7h8n");
     }
 
     #[test]
     fn test_parse_move() {
         assert_eq!(parse_move("a1d4"), ((0, 0), (3, 3), None));
-        assert_eq!(parse_move("a7a8q"), ((0, 6), (0, 7), Some(board::SQ_Q)));
-        assert_eq!(parse_move("a7a8r"), ((0, 6), (0, 7), Some(board::SQ_R)));
+        assert_eq!(parse_move("a7a8q"), ((0, 6), (0, 7), Some(SQ_Q)));
+        assert_eq!(parse_move("a7a8r"), ((0, 6), (0, 7), Some(SQ_R)));
     }
 
     #[test]

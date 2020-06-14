@@ -4,7 +4,10 @@ use clap::{App, AppSettings, Arg, ArgMatches, SubCommand};
 
 pub mod analysis;
 pub mod board;
+pub mod castling;
 pub mod engine;
+pub mod movement;
+pub mod node;
 pub mod notation;
 pub mod rules;
 pub mod stats;

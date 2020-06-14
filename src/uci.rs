@@ -6,8 +6,8 @@ use std::sync::mpsc;
 use std::thread;
 
 use crate::engine;
+use crate::movement::Move;
 use crate::notation;
-use crate::rules;
 
 const VATU_NAME: &str = env!("CARGO_PKG_NAME");
 const VATU_AUTHORS: &str = env!("CARGO_PKG_AUTHORS");
@@ -58,13 +58,13 @@ pub enum UciCmd {
 pub enum PositionArgs {
     Startpos,
     Fen(notation::Fen),
-    Moves(Vec<rules::Move>),
+    Moves(Vec<Move>),
 }
 
 /// Arguments for the go remote commands.
 #[derive(Debug, Clone)]
 pub enum GoArgs {
-    SearchMoves(Vec<rules::Move>),
+    SearchMoves(Vec<Move>),
     Ponder,
     WTime(i32),
     BTime(i32),
@@ -199,11 +199,11 @@ impl Uci {
     fn handle_engine_command(&mut self, cmd: &engine::Cmd) {
         match cmd {
             engine::Cmd::UciChannel(s) => {
-                self.log("ENG >>> Channel opened.".to_string());
+                self.log("ENGINE: Channel opened.".to_string());
                 self.engine_in = Some(s.to_owned());
             }
             engine::Cmd::Log(s) => {
-                self.log(s.to_string());
+                self.log(format!("ENGINE: {}", s.to_string()));
             }
             engine::Cmd::Info(infos) => {
                 self.send_infos(infos);
@@ -261,7 +261,7 @@ impl Uci {
     }
 
     /// Send best move.
-    fn send_bestmove(&mut self, m: &Option<rules::Move>) {
+    fn send_bestmove(&mut self, m: &Option<Move>) {
         let move_str = match m {
             Some(m) => notation::move_to_string(m),
             None => notation::NULL_MOVE.to_string(),

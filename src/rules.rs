@@ -1,6 +1,8 @@
 //! Functions to determine legal moves.
 
 use crate::board::*;
+use crate::castling::*;
+use crate::movement::{self, Move};
 use crate::notation;
 
 /// Characteristics of the state of a game.
@@ -50,168 +52,6 @@ impl std::fmt::Display for GameState {
     }
 }
 
-pub const CASTLING_WH_K: u8    = 0b00000001;
-pub const CASTLING_WH_Q: u8    = 0b00000010;
-pub const CASTLING_WH_MASK: u8 = 0b00000011;
-pub const CASTLING_BL_K: u8    = 0b00000100;
-pub const CASTLING_BL_Q: u8    = 0b00001000;
-pub const CASTLING_BL_MASK: u8 = 0b00001100;
-pub const CASTLING_K_MASK: u8  = 0b00000101;
-pub const CASTLING_Q_MASK: u8  = 0b00001010;
-pub const CASTLING_MASK: u8    = 0b00001111;
-
-/// Castling sides parameters.
-///
-/// For both sides, the 3-uple contains files that should be empty
-/// and not attacked, an optional file that should be empty for
-/// queen-side, and the castling side-mask.
-pub const CASTLING_SIDES: [([i8; 2], Option<i8>, u8); 2] =
-    [([5i8, 6i8], None, CASTLING_K_MASK), ([3i8, 2i8], Some(1i8), CASTLING_Q_MASK)];
-
-pub const START_WH_K_POS: Pos = pos("e1");
-pub const START_BL_K_POS: Pos = pos("e8");
-
-/// A movement, with before/after positions and optional promotion.
-pub type Move = (Pos, Pos, Option<u8>);
-
-/// Apply a move `m` to copies to `board` and `game_state`.
-pub fn apply_move(board: &Board, game_state: &GameState, m: &Move) -> (Board, GameState) {
-    let mut new_board = board.clone();
-    let mut new_state = game_state.clone();
-    apply_move_to(&mut new_board, &mut new_state, m);
-    (new_board, new_state)
-}
-
-/// Update `board` and `game_state` to reflect the move `m`.
-///
-/// The board is updated with correct piece placement.
-///
-/// The game state is updated with the new player turn and the new
-/// castling options.
-pub fn apply_move_to(board: &mut Board, game_state: &mut GameState, m: &Move) {
-    apply_move_to_board(board, m);
-    apply_move_to_state(game_state, m);
-    // If the move is a castle, remove it from castling options.
-    if let Some(castle) = get_castle(m) {
-        match castle {
-            CASTLING_WH_K | CASTLING_WH_Q => game_state.castling &= !CASTLING_WH_MASK,
-            CASTLING_BL_K | CASTLING_BL_Q => game_state.castling &= !CASTLING_BL_MASK,
-            _ => {}
-        };
-    }
-    // Else, check if it's either a rook or the king that moved.
-    else {
-        let piece = get_square(board, &m.1);
-        if is_white(piece) && game_state.castling & CASTLING_WH_MASK != 0 {
-            match get_type(piece) {
-                SQ_K => {
-                    if m.0 == pos("e1") {
-                        game_state.castling &= !CASTLING_WH_MASK;
-                    }
-                }
-                SQ_R => {
-                    if m.0 == pos("a1") {
-                        game_state.castling &= !CASTLING_WH_Q;
-                    } else if m.0 == pos("h1") {
-                        game_state.castling &= !CASTLING_WH_K;
-                    }
-                }
-                _ => {}
-            }
-        } else if is_black(piece) && game_state.castling & CASTLING_BL_MASK != 0 {
-            match get_type(piece) {
-                SQ_K => {
-                    if m.0 == pos("e8") {
-                        game_state.castling &= !CASTLING_BL_MASK;
-                    }
-                }
-                SQ_R => {
-                    if m.0 == pos("a8") {
-                        game_state.castling &= !CASTLING_BL_Q;
-                    } else if m.0 == pos("h8") {
-                        game_state.castling &= !CASTLING_BL_K;
-                    }
-                }
-                _ => {}
-            }
-        }
-    }
-}
-
-/// Apply a move `m` into `board`.
-pub fn apply_move_to_board(board: &mut Board, m: &Move) {
-    if let Some(castle) = get_castle(m) {
-        match castle {
-            CASTLING_WH_K => {
-                move_piece(board, &START_WH_K_POS, &pos("g1"));
-                move_piece(board, &pos("h1"), &pos("f1"));
-            }
-            CASTLING_WH_Q => {
-                move_piece(board, &START_WH_K_POS, &pos("c1"));
-                move_piece(board, &pos("a1"), &pos("d1"));
-            }
-            CASTLING_BL_K => {
-                move_piece(board, &START_BL_K_POS, &pos("g8"));
-                move_piece(board, &pos("h8"), &pos("f8"));
-            }
-            CASTLING_BL_Q => {
-                move_piece(board, &START_BL_K_POS, &pos("c8"));
-                move_piece(board, &pos("a8"), &pos("d8"));
-            }
-            _ => {}
-        }
-    } else {
-        move_piece(board, &m.0, &m.1);
-        if let Some(prom_type) = m.2 {
-            let color = get_color(get_square(board, &m.1));
-            set_square(board, &m.1, color|prom_type);
-        }
-    }
-}
-
-/// Update `game_state` with the move `m`.
-///
-/// This only updates the player turn. Castling should be updated in a
-/// context where the corresponding board is available.
-pub fn apply_move_to_state(game_state: &mut GameState, _m: &Move) {
-    game_state.color = opposite(game_state.color);
-}
-
-/// Get the corresponding castling flag for this move.
-pub fn get_castle(m: &Move) -> Option<u8> {
-    if m.0 == pos("e1") {
-        if m.1 == pos("c1") {
-            Some(CASTLING_WH_Q)
-        } else if m.1 == pos("g1") {
-            Some(CASTLING_WH_K)
-        } else {
-            None
-        }
-    } else if m.0 == pos("e8") {
-        if m.1 == pos("c8") {
-            Some(CASTLING_BL_Q)
-        } else if m.1 == pos("g8") {
-            Some(CASTLING_BL_K)
-        } else {
-            None
-        }
-    } else {
-        None
-    }
-}
-
-/// Get the move for this castle.
-pub fn get_castle_move(castle: u8) -> Move {
-    match castle {
-        CASTLING_WH_Q => (pos("e1"), pos("c1"), None),
-        CASTLING_WH_K => (pos("e1"), pos("g1"), None),
-        CASTLING_BL_Q => (pos("e8"), pos("c8"), None),
-        CASTLING_BL_K => (pos("e8"), pos("g8"), None),
-        _ => panic!("Illegal castling requested: {:08b}", castle),
-    }
-}
-
-
 /// Get a list of moves for all pieces of the playing color.
 ///
 /// If `commit` is false, do not check for illegal moves. This is used
@@ -219,7 +59,11 @@ pub fn get_castle_move(castle: u8) -> Move {
 /// as it needs to check all possible following enemy moves, e.g. to
 /// see if P's king can be taken. Consider a call with true `commit` as
 /// a collection of attacked squares instead of legal move collection.
-pub fn get_player_moves(board: &Board, game_state: &GameState, commit: bool) -> Vec<Move> {
+pub fn get_player_moves(
+    board: &Board,
+    game_state: &GameState,
+    commit: bool,
+) -> Vec<Move> {
     let mut moves = Vec::with_capacity(256);
     for r in 0..8 {
         for f in 0..8 {
@@ -236,7 +80,12 @@ pub fn get_player_moves(board: &Board, game_state: &GameState, commit: bool) -> 
 }
 
 /// Get a list of moves for the piece at position `at`.
-pub fn get_piece_moves(board: &Board, at: &Pos, game_state: &GameState, commit: bool) -> Vec<Move> {
+pub fn get_piece_moves(
+    board: &Board,
+    at: &Pos,
+    game_state: &GameState,
+    commit: bool,
+) -> Vec<Move> {
     match get_square(board, at) {
         p if is_piece(p, SQ_P) => get_pawn_moves(board, at, p, game_state, commit),
         p if is_piece(p, SQ_B) => get_bishop_moves(board, at, p, game_state, commit),
@@ -505,7 +354,7 @@ fn get_king_moves(
                     }
                 }
                 let castle = castling_side_mask & castling_color_mask;
-                let m = get_castle_move(castle);
+                let m = movement::get_castle_move(castle);
                 if can_register(commit, board, game_state, &m) {
                     moves.push(m);
                 }
@@ -552,7 +401,7 @@ fn is_illegal(board: &Board, game_state: &GameState, m: &Move) -> bool {
         // If king moves, use its new position.
         let king_p = if m.0 == king_p { m.1 } else { king_p };
         let mut hypothetic_board = board.clone();
-        apply_move_to_board(&mut hypothetic_board, m);
+        movement::apply_move_to_board(&mut hypothetic_board, m);
         // Check if the move makes the player king in check.
         if is_attacked(&hypothetic_board, &game_state, &king_p) {
             return true
@@ -587,66 +436,6 @@ fn is_attacked(board: &Board, game_state: &GameState, at: &Pos) -> bool {
 mod tests {
     use super::*;
     use crate::notation::parse_move;
-
-    #[test]
-    fn test_get_castle() {
-        assert_eq!(get_castle(&parse_move("e1c1")), Some(CASTLING_WH_Q));
-        assert_eq!(get_castle(&parse_move("e1g1")), Some(CASTLING_WH_K));
-        assert_eq!(get_castle(&parse_move("e8c8")), Some(CASTLING_BL_Q));
-        assert_eq!(get_castle(&parse_move("e8g8")), Some(CASTLING_BL_K));
-        assert_eq!(get_castle(&parse_move("d2d4")), None);
-    }
-
-    #[test]
-    fn test_apply_move_to_board() {
-        let mut b = new_empty();
-
-        // Put 2 enemy knights on board.
-        set_square(&mut b, &pos("d4"), SQ_WH_N);
-        set_square(&mut b, &pos("f4"), SQ_BL_N);
-        // Move white knight in a position attacked by black knight.
-        apply_move_to_board(&mut b, &(pos("d4"), pos("e6"), None));
-        assert_eq!(get_square(&b, &pos("d4")), SQ_E);
-        assert_eq!(get_square(&b, &pos("e6")), SQ_WH_N);
-        assert_eq!(num_pieces(&b), 2);
-        // Sack it with black knight
-        apply_move_to_board(&mut b, &(pos("f4"), pos("e6"), None));
-        assert_eq!(get_square(&b, &pos("e6")), SQ_BL_N);
-        assert_eq!(num_pieces(&b), 1);
-    }
-
-    #[test]
-    fn test_apply_move_to_castling() {
-        let mut b = new();
-        let mut gs = GameState::new();
-        assert_eq!(gs.castling, CASTLING_MASK);
-
-        // On a starting board, start by making place for all castles.
-        clear_square(&mut b, &pos("b1"));
-        clear_square(&mut b, &pos("c1"));
-        clear_square(&mut b, &pos("d1"));
-        clear_square(&mut b, &pos("f1"));
-        clear_square(&mut b, &pos("g1"));
-        clear_square(&mut b, &pos("b8"));
-        clear_square(&mut b, &pos("c8"));
-        clear_square(&mut b, &pos("d8"));
-        clear_square(&mut b, &pos("f8"));
-        clear_square(&mut b, &pos("g8"));
-        // White queen-side castling.
-        apply_move_to(&mut b, &mut gs, &parse_move("e1c1"));
-        assert!(is_piece(get_square(&b, &pos("c1")), SQ_WH_K));
-        assert!(is_piece(get_square(&b, &pos("d1")), SQ_WH_R));
-        assert!(is_empty(&b, &pos("a1")));
-        assert!(is_empty(&b, &pos("e1")));
-        assert_eq!(gs.castling, CASTLING_BL_MASK);
-        // Black king-side castling.
-        apply_move_to(&mut b, &mut gs, &parse_move("e8g8"));
-        assert!(is_piece(get_square(&b, &pos("g8")), SQ_BL_K));
-        assert!(is_piece(get_square(&b, &pos("f8")), SQ_BL_R));
-        assert!(is_empty(&b, &pos("h8")));
-        assert!(is_empty(&b, &pos("e8")));
-        assert_eq!(gs.castling, 0);
-    }
 
     #[test]
     fn test_get_player_moves() {
@@ -840,7 +629,7 @@ mod tests {
         set_square(&mut b, &pos("d6"), SQ_BL_R);
         assert!(is_attacked(&b, &gs, &pos("d4")));
         // Move the rook on another file, no more attack.
-        apply_move_to_board(&mut b, &parse_move("d6e6"));
+        movement::apply_move_to_board(&mut b, &parse_move("d6e6"));
         assert!(!is_attacked(&b, &gs, &pos("d4")));
     }
 }
