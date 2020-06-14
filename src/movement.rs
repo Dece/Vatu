@@ -36,8 +36,21 @@ pub fn apply_move_to(
     game_state: &mut rules::GameState,
     m: &Move
 ) {
+    // If a rook is taken, remove its castling option. Needs to be checked before we update board.
+    if m.1 == pos("a1") && get_square(board, &pos("a1")) == SQ_WH_R {
+        game_state.castling &= !CASTLING_WH_Q;
+    } else if m.1 == pos("h1") && get_square(board, &pos("h1")) == SQ_WH_R {
+        game_state.castling &= !CASTLING_WH_K;
+    } else if m.1 == pos("a8") && get_square(board, &pos("a8")) == SQ_BL_R {
+        game_state.castling &= !CASTLING_BL_Q;
+    } else if m.1 == pos("h8") && get_square(board, &pos("h8")) == SQ_BL_R {
+        game_state.castling &= !CASTLING_BL_K;
+    }
+
+    // Update board and game state.
     apply_move_to_board(board, m);
     apply_move_to_state(game_state, m);
+
     // If the move is a castle, remove it from castling options.
     if let Some(castle) = get_castle(m) {
         match castle {
@@ -46,7 +59,7 @@ pub fn apply_move_to(
             _ => {}
         };
     }
-    // Else, check if it's either a rook or the king that moved.
+    // Else, check if the king or a rook moved to update castling options.
     else {
         let piece = get_square(board, &m.1);
         if is_white(piece) && game_state.castling & CASTLING_WH_MASK != 0 {
