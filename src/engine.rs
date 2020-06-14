@@ -6,6 +6,8 @@
 use std::sync::{Arc, atomic, mpsc};
 use std::thread;
 
+use dashmap::DashMap;
+
 use crate::analysis;
 use crate::board;
 use crate::notation;
@@ -19,7 +21,7 @@ pub struct Engine {
     /// Current game state, starting point of further analysis.
     node: analysis::Node,
     /// Store already evaluated nodes with their score.
-    // score_map: Arc<RwLock<HashMap<Node, f32>>>,
+    score_map: Arc<DashMap<analysis::Node, f32>>,
     /// Communication mode.
     mode: Mode,
     /// If true, the engine is currently listening to incoming cmds.
@@ -77,7 +79,7 @@ impl Engine {
         Engine {
             debug: false,
             node: analysis::Node::new(),
-            // score_map: HashMap::with_capacity(2usize.pow(10)),
+            score_map: Arc::new(DashMap::with_capacity(2usize.pow(10))),
             mode: Mode::No,
             listening: false,
             working: Arc::new(atomic::AtomicBool::new(false)),
@@ -179,11 +181,12 @@ impl Engine {
         self.working.store(true, atomic::Ordering::Relaxed);
         let mut node = self.node.clone();
         let args = args.clone();
+        let score_map = self.score_map.clone();
         let working = self.working.clone();
         let tx = match &self.mode { Mode::Uci(_, _, tx) => tx.clone(), _ => return };
         let debug = self.debug;
         thread::spawn(move || {
-            analysis::analyze(&mut node, &args, working, tx, debug);
+            analysis::analyze(&mut node, &args, &score_map, working, tx, debug);
         });
     }
 

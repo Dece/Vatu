@@ -220,7 +220,7 @@ pub fn get_castle_move(castle: u8) -> Move {
 /// see if P's king can be taken. Consider a call with true `commit` as
 /// a collection of attacked squares instead of legal move collection.
 pub fn get_player_moves(board: &Board, game_state: &GameState, commit: bool) -> Vec<Move> {
-    let mut moves = vec!();
+    let mut moves = Vec::with_capacity(256);
     for r in 0..8 {
         for f in 0..8 {
             let p = (f, r);

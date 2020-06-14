@@ -4,6 +4,8 @@ use std::fmt;
 use std::hash::{Hash, Hasher};
 use std::sync::{Arc, atomic, mpsc};
 
+use dashmap::DashMap;
+
 use crate::board;
 use crate::engine;
 use crate::notation;
@@ -71,6 +73,8 @@ impl Hash for Node {
     }
 }
 
+pub type NodeEvalMap = Arc<DashMap<Node, f32>>;
+
 /// Analysis parameters.
 #[derive(Clone)]
 pub struct AnalysisParams {
@@ -88,6 +92,7 @@ const MAX_F32: f32 = std::f32::INFINITY;
 pub fn analyze(
     node: &mut Node,
     _args: &AnalysisParams,
+    score_map: &NodeEvalMap,
     working: Arc<atomic::AtomicBool>,
     tx: mpsc::Sender<engine::Cmd>,
     debug: bool,
@@ -102,7 +107,13 @@ pub fn analyze(
         tx.send(engine::Cmd::Log(moves_str)).unwrap();
     }
 
-    let (max_score, best_move) = minimax(node, 0, 2, board::is_white(node.game_state.color));
+    let (max_score, best_move) = minimax(
+        node,
+        0,
+        3,
+        board::is_white(node.game_state.color),
+        &score_map,
+    );
 
     if best_move.is_some() {
         let log_str = format!(
@@ -145,12 +156,21 @@ fn minimax(
     node: &mut Node,
     depth: u32,
     max_depth: u32,
-    maximizing: bool
+    maximizing: bool,
+    score_map: &NodeEvalMap,
 ) -> (f32, Option<rules::Move>) {
+    // If the node has already been analysed before, return its previous evaluation.
+    if let Some(score) = score_map.get(node) {
+        return (*score.value(), None)
+    }
+    // If we reached max depth, evaluate score for this board, store score and stop recursion.
     if depth == max_depth {
         let stats = stats::compute_stats(&node.board, &node.game_state);
-        return (evaluate(&stats), None);
+        let score = evaluate(&stats);
+        score_map.insert(node.clone(), score);
+        return (score, None);
     }
+    // Else, get the minimax score.
     let mut minmax = if maximizing { MIN_F32 } else { MAX_F32 };
     let mut minmax_move = None;
     let moves = rules::get_player_moves(&node.board, &node.game_state, true);
@@ -158,13 +178,13 @@ fn minimax(
         let mut sub_node = node.clone();
         rules::apply_move_to(&mut sub_node.board, &mut sub_node.game_state, &m);
         if maximizing {
-            let (score, _) = minimax(&mut sub_node, depth + 1, max_depth, false);
+            let (score, _) = minimax(&mut sub_node, depth + 1, max_depth, false, score_map);
             if score >= minmax {
                 minmax = score;
                 minmax_move = Some(m);
             }
         } else {
-            let (score, _) = minimax(&mut sub_node, depth + 1, max_depth, true);
+            let (score, _) = minimax(&mut sub_node, depth + 1, max_depth, true, score_map);
             if score <= minmax {
                 minmax = score;
                 minmax_move = Some(m);
