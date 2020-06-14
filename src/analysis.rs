@@ -60,9 +60,8 @@ impl Analyzer {
             self.log(format!("Legal moves: {}", notation::move_list_to_string(&moves)));
         }
 
-        self.max_depth = 2;
-        let color_factor = if board::is_white(self.node.game_state.color) { 1 } else { -1 } as f32;
-        let (max_score, best_move) = self.negamax(&self.node, 0, color_factor);
+        self.max_depth = 3;
+        let (max_score, best_move) = self.negamax(&self.node, MIN_F32, MAX_F32, 0);
 
         if best_move.is_some() {
             let log_str = format!(
@@ -83,24 +82,37 @@ impl Analyzer {
     fn negamax(
         &self,
         node: &Node,
+        alpha: f32,
+        beta: f32,
         depth: u32,
-        color_f: f32,
     ) -> (f32, Option<Move>) {
         if depth == self.max_depth {
             let stats = node.compute_stats();
-            return (color_f * evaluate(&stats), None)
+            let ev = evaluate(&stats);
+            return (ev, None)
         }
         let moves = node.get_player_moves(true);
+        let mut alpha = alpha;
         let mut best_score = MIN_F32;
         let mut best_move = None;
         for m in moves {
+            self.log(format!("negamax: depth {} move {}...", depth, notation::move_to_string(&m)));
             let mut sub_node = node.clone();
             sub_node.apply_move(&m);
-            let (score, _) = self.negamax(&mut sub_node, depth + 1, -color_f);
-            let score = -score;
-            if score >= best_score {
+            let result = self.negamax(&sub_node, -beta, -alpha, depth + 1);
+            let score = -result.0;
+            if score > best_score {
                 best_score = score;
                 best_move = Some(m);
+                self.log(format!("negamax: depth {} new best score {}.", depth, best_score));
+            }
+            if best_score > alpha {
+                alpha = best_score;
+                self.log(format!("negamax: depth {} new alpha {}.", depth, alpha));
+            }
+            if alpha >= beta {
+                self.log(format!("negamax: depth {} alpha above beta {}, cut.", depth, beta));
+                break
             }
         }
         (best_score, best_move)
@@ -116,44 +128,15 @@ fn evaluate(stats: &(stats::BoardStats, stats::BoardStats)) -> f32 {
     let (player_stats, opponent_stats) = stats;
 
     200.0 * (player_stats.num_kings - opponent_stats.num_kings) as f32
-        + 9.0 * (player_stats.num_queens - opponent_stats.num_queens) as f32
-        + 5.0 * (player_stats.num_rooks - opponent_stats.num_rooks) as f32
-        + 3.0 * (player_stats.num_bishops - opponent_stats.num_bishops) as f32
-        + 3.0 * (player_stats.num_knights - opponent_stats.num_knights) as f32
-        + (player_stats.num_pawns - opponent_stats.num_pawns) as f32
-        - 0.5 * (
-            player_stats.num_doubled_pawns - opponent_stats.num_doubled_pawns +
-            player_stats.num_isolated_pawns - opponent_stats.num_isolated_pawns +
-            player_stats.num_backward_pawns - opponent_stats.num_backward_pawns
-        ) as f32
-        + 0.1 * (player_stats.mobility - opponent_stats.mobility) as f32
-}
-
-#[cfg(test)]
-mod tests {
-    // use super::*;
-
-    #[test]
-    fn test_minimax() {
-        // FIXME
-        // let mut node = Node::new();
-        // node.game_state.castling = 0;
-
-        // // White mates in 1 move, queen to d7.
-        // board::set_square(&mut node.board, &pos("a1"), board::SQ_WH_K);
-        // board::set_square(&mut node.board, &pos("c6"), board::SQ_WH_P);
-        // board::set_square(&mut node.board, &pos("h7"), board::SQ_WH_Q);
-        // board::set_square(&mut node.board, &pos("d8"), board::SQ_BL_K);
-        // let (_, m) = minimax(&mut node, 0, 2, true);
-        // assert_eq!(m.unwrap(), notation::parse_move("h7d7"));
-
-        // // Check that it works for black as well.
-        // board::set_square(&mut node.board, &pos("a1"), board::SQ_BL_K);
-        // board::set_square(&mut node.board, &pos("c6"), board::SQ_BL_P);
-        // board::set_square(&mut node.board, &pos("h7"), board::SQ_BL_Q);
-        // board::set_square(&mut node.board, &pos("d8"), board::SQ_WH_K);
-        // node.game_state.color = board::SQ_BL;
-        // let (_, m) = minimax(&mut node, 0, 2, true);
-        // assert_eq!(m.unwrap(), notation::parse_move("h7d7"));
-    }
+    + 9.0 * (player_stats.num_queens - opponent_stats.num_queens) as f32
+    + 5.0 * (player_stats.num_rooks - opponent_stats.num_rooks) as f32
+    + 3.0 * (player_stats.num_bishops - opponent_stats.num_bishops) as f32
+    + 3.0 * (player_stats.num_knights - opponent_stats.num_knights) as f32
+    + (player_stats.num_pawns - opponent_stats.num_pawns) as f32
+    - 0.5 * (
+        player_stats.num_doubled_pawns - opponent_stats.num_doubled_pawns +
+        player_stats.num_isolated_pawns - opponent_stats.num_isolated_pawns +
+        player_stats.num_backward_pawns - opponent_stats.num_backward_pawns
+    ) as f32
+    + 0.1 * (player_stats.mobility - opponent_stats.mobility) as f32
 }

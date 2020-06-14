@@ -49,7 +49,7 @@ pub fn apply_move_to(
 
     // Update board and game state.
     apply_move_to_board(board, m);
-    apply_move_to_state(game_state, m);
+    game_state.color = opposite(game_state.color);
 
     // If the move is a castle, remove it from castling options.
     if let Some(castle) = get_castle(m) {
@@ -127,14 +127,6 @@ pub fn apply_move_to_board(board: &mut Board, m: &Move) {
             set_square(board, &m.1, color|prom_type);
         }
     }
-}
-
-/// Update `game_state` with the move `m`.
-///
-/// This only updates the player turn. Castling should be updated in a
-/// context where the corresponding board is available.
-pub fn apply_move_to_state(game_state: &mut rules::GameState, _m: &Move) {
-    game_state.color = opposite(game_state.color);
 }
 
 /// Get the corresponding castling flag for this move.

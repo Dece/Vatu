@@ -104,6 +104,11 @@ impl Engine {
         }
     }
 
+    /// Enable debug output.
+    pub fn enable_debug(&mut self) {
+        self.debug = true;
+    }
+
     /// Handle UCI commands passed as engine Cmds.
     fn handle_command(&mut self, cmd: &Cmd) {
         match cmd {

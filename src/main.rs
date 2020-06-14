@@ -18,6 +18,9 @@ fn main() {
         .setting(AppSettings::ArgRequiredElseHelp)
         .subcommand(SubCommand::with_name("uci")
             .about("Start engine in UCI mode")
+            .arg(Arg::with_name("debug")
+                .help("Enable debug mode")
+                .short("d").long("debug").takes_value(false).required(false))
             .arg(Arg::with_name("log_file")
                 .help("Log file path (default is stderr)")
                 .long("log-file").takes_value(true).required(false)))
@@ -30,7 +33,8 @@ fn main() {
 }
 
 fn cmd_uci(args: &ArgMatches) -> i32 {
+    let debug = args.is_present("debug");
     let output = args.value_of("log_file");
-    uci::Uci::start(output);
+    uci::Uci::start(debug, output);
     0
 }

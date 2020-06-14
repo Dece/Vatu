@@ -18,10 +18,16 @@ const VATU_AUTHORS: &str = env!("CARGO_PKG_AUTHORS");
 /// UCI manager with means to send/receive commands and communicate
 /// with the engine.
 pub struct Uci {
-    state: State,                                           // Local UCI state for consistency.
-    cmd_channel: (mpsc::Sender<Cmd>, mpsc::Receiver<Cmd>),  // Channel of Cmd, handled by Uci.
-    engine_in: Option<mpsc::Sender<engine::Cmd>>,           // Sender for engine comms.
-    logfile: Option<fs::File>,                              // If some, write logs to it.
+    /// Local UCI state for consistency.
+    state: State,
+    /// Channel of Cmd, handled by Uci.
+    cmd_channel: (mpsc::Sender<Cmd>, mpsc::Receiver<Cmd>),
+    /// Sender for engine comms.
+    engine_in: Option<mpsc::Sender<engine::Cmd>>,
+    /// Debug mode, if true it will override debug mode settings for the engine.
+    debug: bool,
+    /// If some, write logs to it.
+    logfile: Option<fs::File>,
 }
 
 /// Internal UCI state.
@@ -80,7 +86,7 @@ pub enum GoArgs {
 
 impl Uci {
     /// Start a new UCI listening for standard input.
-    pub fn start(output: Option<&str>) {
+    pub fn start(debug: bool, output: Option<&str>) {
         // Create the UCI queue, both for standard IO and for engine communication.
         let (uci_s, uci_r): (mpsc::Sender<Cmd>, mpsc::Receiver<Cmd>) = mpsc::channel();
         let stdin_tx = uci_s.clone();
@@ -92,6 +98,7 @@ impl Uci {
             state: State::Init,
             cmd_channel: (uci_s, uci_r),
             engine_in: None,
+            debug,
             logfile: None,
         };
         // Configure log output, either a file or stderr.
@@ -225,9 +232,13 @@ impl Uci {
 
     /// Setup engine for UCI.
     fn setup_engine(&mut self) {
+        let debug = self.debug;
         let uci_s = self.cmd_channel.0.clone();
         thread::spawn(move || {
             let mut engine = engine::Engine::new();
+            if debug {
+                engine.enable_debug();
+            }
             engine.setup_uci(uci_s);
         });
         self.state = State::Ready;
