@@ -1,8 +1,8 @@
 //! Analysis functions.
 
 use std::sync::{Arc, atomic, mpsc};
+use std::time::Instant;
 
-use crate::board;
 use crate::engine;
 use crate::movement::Move;
 use crate::node::Node;
@@ -19,6 +19,9 @@ pub struct Analyzer {
     node: Node,
     engine_tx: mpsc::Sender<engine::Cmd>,
     max_depth: u32,
+    nps_time: Instant,
+    num_nodes: u64,
+    num_nodes_in_second: u64,
 }
 
 /// Analysis parameters.
@@ -31,14 +34,38 @@ pub struct AnalysisParams {
     pub black_inc: i32,
 }
 
+/// Analysis info to report.
+#[derive(Debug, Clone)]
+pub enum AnalysisInfo {
+    Nodes(u64),
+    Nps(u64),
+    CurrentMove(Move),
+}
+
 impl Analyzer {
     /// Create a new worker to analyze from `node`.
     pub fn new(node: Node, engine_tx: mpsc::Sender<engine::Cmd>) -> Analyzer {
-        Analyzer { debug: false, node, engine_tx, max_depth: 1 }
+        Analyzer {
+            debug: false,
+            node,
+            engine_tx,
+            max_depth: 1,
+            nps_time: Instant::now(),
+            num_nodes: 0,
+            num_nodes_in_second: 0,
+        }
     }
 
     fn log(&self, message: String) {
         self.engine_tx.send(engine::Cmd::Log(message)).unwrap();
+    }
+
+    fn report_info(&self, infos: Vec<AnalysisInfo>) {
+        self.engine_tx.send(engine::Cmd::WorkerInfo(infos)).unwrap();
+    }
+
+    fn report_best_move(&self, m: Option<Move>) {
+        self.engine_tx.send(engine::Cmd::WorkerBestMove(m)).unwrap();
     }
 
     /// Analyse best moves for the node.
@@ -60,8 +87,9 @@ impl Analyzer {
             self.log(format!("Legal moves: {}", notation::move_list_to_string(&moves)));
         }
 
-        self.max_depth = 3;
-        let (max_score, best_move) = self.negamax(&self.node, MIN_F32, MAX_F32, 0);
+        self.nps_time = Instant::now();
+        self.max_depth = 4;
+        let (max_score, best_move) = self.negamax(&self.node.clone(), MIN_F32, MAX_F32, 0);
 
         if best_move.is_some() {
             let log_str = format!(
@@ -69,34 +97,50 @@ impl Analyzer {
                 notation::move_to_string(&best_move.unwrap()), max_score
             );
             self.log(log_str);
-            self.engine_tx.send(engine::Cmd::TmpBestMove(best_move)).unwrap();
+            self.report_best_move(best_move);
         } else {
             // If no best move could be found, checkmate is unavoidable; send the first legal move.
             self.log("Checkmate is unavoidable.".to_string());
             let moves = rules::get_player_moves(&self.node.board, &self.node.game_state, true);
             let m = if moves.len() > 0 { Some(moves[0]) } else { None };
-            self.engine_tx.send(engine::Cmd::TmpBestMove(m)).unwrap();
+            self.report_best_move(m);
         }
     }
 
     fn negamax(
-        &self,
+        &mut self,
         node: &Node,
         alpha: f32,
         beta: f32,
         depth: u32,
     ) -> (f32, Option<Move>) {
+        // Increment number of nodes for stats.
+        self.num_nodes += 1;
+        self.num_nodes_in_second += 1;
+
+        // If we reached max depth, evaluate the node and stop searching.
         if depth == self.max_depth {
             let stats = node.compute_stats();
             let ev = evaluate(&stats);
             return (ev, None)
         }
+
+        // Here's a good time to get some stats!
+        if self.nps_time.elapsed().as_millis() >= 1000 {
+            self.report_info(vec![
+                AnalysisInfo::Nodes(self.num_nodes),
+                AnalysisInfo::Nps(self.num_nodes_in_second),
+            ]);
+            self.num_nodes_in_second = 0;
+            self.nps_time = Instant::now();
+        }
+
+        // Get negamax for playable moves.
         let moves = node.get_player_moves(true);
         let mut alpha = alpha;
         let mut best_score = MIN_F32;
         let mut best_move = None;
         for m in moves {
-            self.log(format!("negamax: depth {} move {}...", depth, notation::move_to_string(&m)));
             let mut sub_node = node.clone();
             sub_node.apply_move(&m);
             let result = self.negamax(&sub_node, -beta, -alpha, depth + 1);
@@ -104,14 +148,11 @@ impl Analyzer {
             if score > best_score {
                 best_score = score;
                 best_move = Some(m);
-                self.log(format!("negamax: depth {} new best score {}.", depth, best_score));
             }
             if best_score > alpha {
                 alpha = best_score;
-                self.log(format!("negamax: depth {} new alpha {}.", depth, alpha));
             }
             if alpha >= beta {
-                self.log(format!("negamax: depth {} alpha above beta {}, cut.", depth, beta));
                 break
             }
         }

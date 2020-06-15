@@ -5,6 +5,7 @@ use std::io::{self, Write};
 use std::sync::mpsc;
 use std::thread;
 
+use crate::analysis::AnalysisInfo;
 use crate::engine;
 use crate::movement::Move;
 use crate::notation;
@@ -259,11 +260,17 @@ impl Uci {
     }
 
     /// Send engine analysis information.
-    fn send_infos(&mut self, infos: &Vec<engine::Info>) {
+    fn send_infos(&mut self, infos: &Vec<AnalysisInfo>) {
         let mut s = "info".to_string();
         for i in infos {
             match i {
-                engine::Info::CurrentMove(m) => {
+                AnalysisInfo::Nodes(n) => {
+                    s.push_str(&format!(" nodes {}", n));
+                }
+                AnalysisInfo::Nps(n) => {
+                    s.push_str(&format!(" nps {}", n));
+                }
+                AnalysisInfo::CurrentMove(m) => {
                     s.push_str(&format!(" currmove {}", notation::move_to_string(m)));
                 }
             }

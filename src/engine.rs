@@ -47,30 +47,33 @@ enum Mode {
 #[derive(Debug)]
 pub enum Cmd {
     // Commands that can be received by the engine.
-    UciChannel(mpsc::Sender<Cmd>),        // Provide a sender to UCI to start receiving commands.
-    UciDebug(bool),                       // UCI "debug" command.
-    UciPosition(Vec<uci::PositionArgs>),  // UCI "position" command.
-    UciGo(Vec<uci::GoArgs>),              // UCI "go" command.
-    Stop,                                 // Stop working ASAP.
-    TmpBestMove(Option<Move>),  // Send best move found by analysis worker (TEMPORARY).
-    WorkerInfo(Vec<Info>),                // Informations from a worker.
+
+    /// Provide a sender to UCI to start receiving commands.
+    UciChannel(mpsc::Sender<Cmd>),
+    /// UCI "debug" command.
+    UciDebug(bool),
+    /// UCI "position" command.
+    UciPosition(Vec<uci::PositionArgs>),
+    /// UCI "go" command.
+    UciGo(Vec<uci::GoArgs>),
+    /// Stop working ASAP.
+    Stop,
+    /// Informations from a worker.
+    WorkerInfo(Vec<analysis::AnalysisInfo>),
+    /// Send best move found by analysis worker.
+    WorkerBestMove(Option<Move>),
 
     // Commands that can be sent by the engine.
+
     /// Ask for a string to be logged or printed.
     ///
     /// Note that workers can send this command to engine, expecting
     /// the message to be forwarded to whatever can log.
     Log(String),
+    /// Report ongoing analysis information.
+    Info(Vec<analysis::AnalysisInfo>),
     /// Report found best move.
     BestMove(Option<Move>),
-    /// Report ongoing analysis information.
-    Info(Vec<Info>),
-}
-
-/// Information to be transmitted back to whatever is listening.
-#[derive(Debug, Clone)]
-pub enum Info {
-    CurrentMove(Move),
 }
 
 /// General engine implementation.
@@ -120,7 +123,7 @@ impl Engine {
             // Workers commands.
             Cmd::Log(s) => self.reply(Cmd::Log(s.to_string())),
             Cmd::WorkerInfo(infos) => self.reply(Cmd::Info(infos.to_vec())),
-            Cmd::TmpBestMove(m) => self.reply(Cmd::BestMove(*m)),
+            Cmd::WorkerBestMove(m) => self.reply(Cmd::BestMove(*m)),
             _ => eprintln!("Not an engine input command: {:?}", cmd),
         }
     }
