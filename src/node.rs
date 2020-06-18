@@ -66,10 +66,8 @@ impl fmt::Display for Node {
 
 impl PartialEq for Node {
     fn eq(&self, other: &Self) -> bool {
-        (
-            self.board.iter().zip(other.board.iter()).all(|(a, b)| a == b) &&
-            self.game_state == other.game_state
-        )
+        self.board.iter().zip(other.board.iter()).all(|(a, b)| a == b)
+        && self.game_state == other.game_state
     }
 }
 

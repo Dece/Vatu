@@ -3,6 +3,7 @@
 use std::sync::{Arc, atomic, mpsc};
 use std::time::Instant;
 
+use crate::board;
 use crate::engine;
 use crate::movement::Move;
 use crate::node::Node;
@@ -14,13 +15,30 @@ const MIN_F32: f32 = std::f32::NEG_INFINITY;
 const MAX_F32: f32 = std::f32::INFINITY;
 
 /// Analysis worker.
+///
+/// Parameters specifying when to stop an analysis (e.g. `max_depth`
+/// and `time_limit`) can be used together without issues and the
+/// worker will try to stop as soon as the first limit is reached.
 pub struct Analyzer {
+    /// Enable some debug logs.
     pub debug: bool,
+    /// Root node for this analysis.
     node: Node,
+    /// Sender for engine commands.
     engine_tx: mpsc::Sender<engine::Cmd>,
+    /// Stop working if flag is unset.
+    working: Option<Arc<atomic::AtomicBool>>,
+    /// Max depth to reach in the next analysis.
     max_depth: u32,
-    nps_time: Instant,
+    /// Time limit for the next analysis.
+    time_limit: i32,
+    /// Instant when the analysis began.
+    start_time: Option<Instant>,
+    /// Instant of the last "per second" stats calculation.
+    current_per_second_timer: Option<Instant>,
+    /// Nodes analyzed in this analysis.
     num_nodes: u64,
+    /// Node analyzed since the last NPS stat.
     num_nodes_in_second: u64,
 }
 
@@ -49,8 +67,11 @@ impl Analyzer {
             debug: false,
             node,
             engine_tx,
+            working: None,
             max_depth: 1,
-            nps_time: Instant::now(),
+            time_limit: 0,
+            start_time: None,
+            current_per_second_timer: None,
             num_nodes: 0,
             num_nodes_in_second: 0,
         }
@@ -75,20 +96,21 @@ impl Analyzer {
     /// - `working`: flag telling whether to keep working or to stop.
     pub fn analyze(
         &mut self,
-        _args: &AnalysisParams,
+        args: &AnalysisParams,
         working: Arc<atomic::AtomicBool>,
     ) {
-        if !working.load(atomic::Ordering::Relaxed) {
-            return;
-        }
+        self.working = Some(working);
+        self.set_limits(args);
+
         if self.debug {
             self.log(format!("Analyzing node:\n{}", &self.node));
             let moves = self.node.get_player_moves(true);
             self.log(format!("Legal moves: {}", notation::move_list_to_string(&moves)));
+            self.log(format!("Move time: {}", self.time_limit));
         }
 
-        self.nps_time = Instant::now();
-        self.max_depth = 4;
+        self.start_time = Some(Instant::now());
+        self.current_per_second_timer = Some(Instant::now());
         let (max_score, best_move) = self.negamax(&self.node.clone(), MIN_F32, MAX_F32, 0);
 
         if best_move.is_some() {
@@ -107,6 +129,37 @@ impl Analyzer {
         }
     }
 
+    /// Set search limits.
+    fn set_limits(&mut self, args: &AnalysisParams) {
+        self.max_depth = 4;
+        self.time_limit = if args.move_time != -1 {
+            args.move_time
+        } else {
+            let (time, inc) = if board::is_white(self.node.game_state.color) {
+                (args.white_time, args.white_inc)
+            } else {
+                (args.black_time, args.black_inc)
+            };
+            // If more than 2 minutes is left, use a 1m time limit.
+            if time > 2*60*1000 {
+                60*1000
+            }
+            // Else use 1/4 of the remaining time (plus the increment).
+            else if time > 0 {
+                (time / 4) + inc
+            }
+            // Or if there is not remaining time, do not use a time limit.
+            else {
+                i32::MAX
+            }
+        };
+    }
+
+    /// Return best score and associated move for this node.
+    ///
+    /// `depth` is the current search depth. `alpha` and `beta` are
+    /// used for alpha-beta search tree pruning, where `alpha` is the
+    /// lower score bound and `beta` the upper bound.
     fn negamax(
         &mut self,
         node: &Node,
@@ -118,21 +171,21 @@ impl Analyzer {
         self.num_nodes += 1;
         self.num_nodes_in_second += 1;
 
-        // If we reached max depth, evaluate the node and stop searching.
-        if depth == self.max_depth {
+        // If we should stop searching, evaluate the node and stop.
+        if self.should_stop_search(depth) {
             let stats = node.compute_stats();
             let ev = evaluate(&stats);
             return (ev, None)
         }
 
         // Here's a good time to get some stats!
-        if self.nps_time.elapsed().as_millis() >= 1000 {
+        if self.current_per_second_timer.unwrap().elapsed().as_millis() >= 1000 {
             self.report_info(vec![
                 AnalysisInfo::Nodes(self.num_nodes),
                 AnalysisInfo::Nps(self.num_nodes_in_second),
             ]);
             self.num_nodes_in_second = 0;
-            self.nps_time = Instant::now();
+            self.current_per_second_timer = Some(Instant::now());
         }
 
         // Get negamax for playable moves.
@@ -157,6 +210,15 @@ impl Analyzer {
             }
         }
         (best_score, best_move)
+    }
+
+    /// Return true if some parameter requires to stop searching.
+    ///
+    /// Check for max node depth, time limit and engine stop flag.
+    fn should_stop_search(&self, depth: u32) -> bool {
+        !self.working.as_ref().unwrap().load(atomic::Ordering::Relaxed)
+        || depth == self.max_depth
+        || self.start_time.unwrap().elapsed().as_millis() >= self.time_limit as u128
     }
 }
 
