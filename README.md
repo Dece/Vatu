@@ -76,6 +76,8 @@ TODO
 
 - Support time constraints
 - Proper unmake mechanism instead of allocating boards like there is no tomorrow
-- Precompute knight some pieces moves, maybe
+- Precompute some pieces moves, maybe
 - Transposition table that does not actually slows search down
+- Check Zobrist hashes for previous point
+- Actual bitboard
 - Multithreading (never)
