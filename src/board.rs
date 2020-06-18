@@ -101,30 +101,48 @@ pub fn pos_string(p: &Pos) -> String {
     String::from_utf8_lossy(&bytes).to_string()
 }
 
-/// Bitboard representation of a chess board.
-///
-/// 64 squares, from A1, A2 to H7, H8. A square is an u8, with bits
-/// defining the state of the square.
-pub type Board = [u8; 64];
+/// Bitboard for color or piece bits.
+pub type Bitboard = u64;
+
+const BB_WH: u8 = 0;
+const BB_BL: u8 = 1;
+const BB_P: u8 = 0;
+const BB_B: u8 = 1;
+const BB_N: u8 = 2;
+const BB_R: u8 = 3;
+const BB_Q: u8 = 4;
+const BB_K: u8 = 5;
+
+/// Board representation with color/piece bitboards.
+pub struct Board {
+    pub color: [Bitboard; 2],
+    pub piece: [Bitboard; 6],
+}
 
 /// Generate the board of a new game.
 pub const fn new() -> Board {
-    [
-        /*            1        2     3     4     5     6        7        8 */
-        /* A */ SQ_WH_R, SQ_WH_P, SQ_E, SQ_E, SQ_E, SQ_E, SQ_BL_P, SQ_BL_R,
-        /* B */ SQ_WH_N, SQ_WH_P, SQ_E, SQ_E, SQ_E, SQ_E, SQ_BL_P, SQ_BL_N,
-        /* C */ SQ_WH_B, SQ_WH_P, SQ_E, SQ_E, SQ_E, SQ_E, SQ_BL_P, SQ_BL_B,
-        /* D */ SQ_WH_Q, SQ_WH_P, SQ_E, SQ_E, SQ_E, SQ_E, SQ_BL_P, SQ_BL_Q,
-        /* E */ SQ_WH_K, SQ_WH_P, SQ_E, SQ_E, SQ_E, SQ_E, SQ_BL_P, SQ_BL_K,
-        /* F */ SQ_WH_B, SQ_WH_P, SQ_E, SQ_E, SQ_E, SQ_E, SQ_BL_P, SQ_BL_B,
-        /* G */ SQ_WH_N, SQ_WH_P, SQ_E, SQ_E, SQ_E, SQ_E, SQ_BL_P, SQ_BL_N,
-        /* H */ SQ_WH_R, SQ_WH_P, SQ_E, SQ_E, SQ_E, SQ_E, SQ_BL_P, SQ_BL_R,
-    ]
+    Board {
+        color: [
+            0b11000000_11000000_11000000_11000000_11000000_11000000_11000000_11000000,
+            0b00000011_00000011_00000011_00000011_00000011_00000011_00000011_00000011,
+        ],
+        piece: [
+            0b01000010_01000010_01000010_01000010_01000010_01000010_01000010_01000010,
+            0b00000000_00000000_10000001_00000000_00000000_10000001_00000000_00000000,
+            0b00000000_10000001_00000000_00000000_00000000_00000000_10000001_00000000,
+            0b10000001_00000000_00000000_00000000_00000000_00000000_00000000_10000001,
+            0b00000000_00000000_00000000_10000001_00000000_00000000_00000000_00000000,
+            0b00000000_00000000_00000000_00000000_10000001_00000000_00000000_00000000,
+        ]
+    }
 }
 
 /// Generate an empty board.
 pub const fn new_empty() -> Board {
-    [SQ_E; 64]
+    Board {
+        color: [0; 2],
+        piece: [0; 6],
+    }
 }
 
 /// Generate a board from a FEN placement string.
@@ -152,11 +170,6 @@ pub fn new_from_fen(fen: &str) -> Board {
         }
     }
     board
-}
-
-/// Return true of both boards are equal.
-pub fn eq(b1: &Board, b2: &Board) -> bool {
-    b1.iter().zip(b2.iter()).all(|(a, b)| a == b)
 }
 
 /// Get value of the square at this position.
@@ -277,17 +290,6 @@ mod tests {
     fn test_new_from_fen() {
         let b1 = new();
         let b2 = new_from_fen(notation::FEN_START);
-        assert!(eq(&b1, &b2));
-    }
-
-    #[test]
-    fn test_eq() {
-        let mut b1 = new();
-        let b2 = new();
-        assert!(eq(&b1, &b2));
-        set_square(&mut b1, &pos("a1"), SQ_E);
-        assert!(!eq(&b1, &b2));
-        set_square(&mut b1, &pos("a1"), SQ_WH_R);
         assert!(eq(&b1, &b2));
     }
 
