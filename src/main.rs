@@ -1,6 +1,4 @@
-use std::process;
-
-use clap::{App, AppSettings, Arg, ArgMatches, SubCommand};
+use clap::{App, Arg};
 
 pub mod analysis;
 pub mod board;
@@ -14,27 +12,16 @@ pub mod stats;
 pub mod uci;
 
 fn main() {
-    let matches = App::new("Vatu")
-        .setting(AppSettings::ArgRequiredElseHelp)
-        .subcommand(SubCommand::with_name("uci")
-            .about("Start engine in UCI mode")
-            .arg(Arg::with_name("debug")
-                .help("Enable debug mode")
-                .short("d").long("debug").takes_value(false).required(false))
-            .arg(Arg::with_name("log_file")
-                .help("Log file path (default is stderr)")
-                .long("log-file").takes_value(true).required(false)))
+    let args = App::new("Vatu")
+        .arg(Arg::with_name("debug")
+            .help("Enable debug mode")
+            .short("d").long("debug").takes_value(false).required(false))
+        .arg(Arg::with_name("log_file")
+            .help("Log file path (default is stderr)")
+            .long("log-file").takes_value(true).required(false))
         .get_matches();
 
-    process::exit(match matches.subcommand() {
-        ("uci", Some(a)) => cmd_uci(a),
-        _ => 0,
-    })
-}
-
-fn cmd_uci(args: &ArgMatches) -> i32 {
     let debug = args.is_present("debug");
     let output = args.value_of("log_file");
     uci::Uci::start(debug, output);
-    0
 }
