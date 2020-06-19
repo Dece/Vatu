@@ -35,7 +35,7 @@ impl Node {
 
     /// Compute stats for both players for this node.
     pub fn compute_stats(&self) -> (stats::BoardStats, stats::BoardStats) {
-        stats::compute_stats(&self.board, &self.game_state)
+        stats::BoardStats::new_from(&self.board, &self.game_state)
     }
 }
 

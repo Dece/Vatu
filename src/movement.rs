@@ -47,6 +47,7 @@ impl Move {
             H1 => { game_state.castling &= !CASTLING_WH_K; }
             A8 => { game_state.castling &= !CASTLING_BL_Q; }
             H8 => { game_state.castling &= !CASTLING_BL_K; }
+            _ => {}
         }
 
         // Update board and game state.

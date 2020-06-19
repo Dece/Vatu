@@ -265,14 +265,15 @@ impl Board {
     }
 
     /// Debug only: count number of pieces on board.
+    #[allow(dead_code)]  // Currently used in tests only.
     pub(crate) fn num_pieces(&self) -> u8 {
-        let cbb = self.combined();
+        let mut cbb = self.combined();
         let mut count = 0;
         while cbb > 0 {
             count += cbb & 1;
             cbb >>= 1;
         }
-        0
+        count as u8
     }
 
     /// Debug only: write a text view of the board.
@@ -294,9 +295,10 @@ impl Board {
                         ROOK => 'r',
                         QUEEN => 'q',
                         KING => 'k',
+                        _ => panic!("Invalid piece.")
                     };
                     if color == WHITE {
-                        let piece_char = piece_char.to_ascii_uppercase();
+                        piece_char = piece_char.to_ascii_uppercase();
                     }
                     piece_char
                 };

@@ -7,7 +7,6 @@ use crate::board;
 use crate::engine;
 use crate::movement::Move;
 use crate::node::Node;
-use crate::notation;
 use crate::rules;
 use crate::stats;
 
@@ -105,7 +104,7 @@ impl Analyzer {
         if self.debug {
             self.log(format!("Analyzing node:\n{}", &self.node));
             let moves = self.node.get_player_moves(true);
-            self.log(format!("Legal moves: {}", notation::move_list_to_string(&moves)));
+            self.log(format!("Legal moves: {}", Move::list_to_uci_string(&moves)));
             self.log(format!("Move time: {}", self.time_limit));
         }
 
@@ -113,18 +112,15 @@ impl Analyzer {
         self.current_per_second_timer = Some(Instant::now());
         let (max_score, best_move) = self.negamax(&self.node.clone(), MIN_F32, MAX_F32, 0);
 
-        if best_move.is_some() {
-            let log_str = format!(
-                "Best move {} evaluated {}",
-                notation::move_to_string(&best_move.unwrap()), max_score
-            );
+        if let Some(m) = best_move {
+            let log_str = format!("Best move {} evaluated {}", m.to_uci_string(), max_score);
             self.log(log_str);
-            self.report_best_move(best_move);
+            self.report_best_move(Some(m));
         } else {
             // If no best move could be found, checkmate is unavoidable; send the first legal move.
             self.log("Checkmate is unavoidable.".to_string());
             let moves = rules::get_player_moves(&self.node.board, &self.node.game_state, true);
-            let m = if moves.len() > 0 { Some(moves[0]) } else { None };
+            let m = if moves.len() > 0 { Some(moves[0].clone()) } else { None };
             self.report_best_move(m);
         }
     }
@@ -135,7 +131,7 @@ impl Analyzer {
         self.time_limit = if args.move_time != -1 {
             args.move_time
         } else {
-            let (time, inc) = if board::is_white(self.node.game_state.color) {
+            let (time, inc) = if self.node.game_state.color == board::WHITE {
                 (args.white_time, args.white_inc)
             } else {
                 (args.black_time, args.black_inc)

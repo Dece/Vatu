@@ -282,7 +282,7 @@ impl Uci {
     fn send_bestmove(&mut self, m: &Option<Move>) {
         self.send(&format!(
             "bestmove {}",
-            if let Some(m) = m { &m.to_uci_string() } else { UCI_NULL_MOVE_STR }
+            if let Some(m) = m { m.to_uci_string() } else { UCI_NULL_MOVE_STR.to_string() }
         ));
     }
 }

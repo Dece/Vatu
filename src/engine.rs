@@ -11,9 +11,9 @@ use std::thread;
 use crate::analysis;
 use crate::board;
 use crate::castling;
-use crate::movement::{self, Move};
+use crate::fen;
+use crate::movement::Move;
 use crate::node::Node;
-use crate::notation;
 use crate::uci;
 
 /// Analysis engine.
@@ -123,7 +123,7 @@ impl Engine {
             // Workers commands.
             Cmd::Log(s) => self.reply(Cmd::Log(s.to_string())),
             Cmd::WorkerInfo(infos) => self.reply(Cmd::Info(infos.to_vec())),
-            Cmd::WorkerBestMove(m) => self.reply(Cmd::BestMove(*m)),
+            Cmd::WorkerBestMove(m) => self.reply(Cmd::BestMove(m.clone())),
             _ => eprintln!("Not an engine input command: {:?}", cmd),
         }
     }
@@ -141,13 +141,13 @@ impl Engine {
     /// Apply a FEN string to the engine state, replacing it.
     ///
     /// For speed purposes, it assumes values are always valid.
-    fn apply_fen(&mut self, fen: &notation::Fen) {
+    fn apply_fen(&mut self, fen: &fen::Fen) {
         // Placement.
-        self.node.board = board::new_from_fen(&fen.placement);
+        self.node.board = board::Board::new_from_fen(&fen.placement);
         // Color.
         match fen.color.chars().next().unwrap() {
-            'w' => self.node.game_state.color = board::SQ_WH,
-            'b' => self.node.game_state.color = board::SQ_BL,
+            'w' => self.node.game_state.color = board::WHITE,
+            'b' => self.node.game_state.color = board::BLACK,
             _ => {}
         };
         // Castling.
@@ -163,7 +163,7 @@ impl Engine {
         // En passant.
         self.node.game_state.en_passant = match fen.en_passant.as_ref() {
             "-" => None,
-            p => Some(board::pos(p)),
+            s => Some(board::sq_from_string(s)),
         };
         // Half moves.
         self.node.game_state.halfmove = fen.halfmove.parse::<i32>().ok().unwrap();
@@ -178,7 +178,7 @@ impl Engine {
 
     /// Apply a move to the current node.
     fn apply_move(&mut self, m: &Move) {
-        movement::apply_move_to(&mut self.node.board, &mut self.node.game_state, m);
+        m.apply_to(&mut self.node.board, &mut self.node.game_state);
     }
 
     /// Start working on board, returning the best move found.
@@ -221,7 +221,7 @@ impl Engine {
                     self.apply_fen(&fen);
                 },
                 uci::PositionArgs::Startpos => {
-                    let fen = notation::parse_fen(notation::FEN_START).unwrap();
+                    let fen = fen::parse_fen(fen::FEN_START).unwrap();
                     self.apply_fen(&fen);
                 },
                 uci::PositionArgs::Moves(moves) => {
