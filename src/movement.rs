@@ -4,11 +4,11 @@ use crate::board::*;
 use crate::castling::*;
 use crate::rules;
 
-const START_WH_K_POS: Pos = pos("e1");
-const START_BL_K_POS: Pos = pos("e8");
+const START_WH_K_POS: Square = E1;
+const START_BL_K_POS: Square = E8;
 
 /// A movement, with before/after positions and optional promotion.
-pub type Move = (Pos, Pos, Option<u8>);
+pub type Move = (Square, Square, Option<Piece>);
 
 /// Apply a move `m` to copies to `board` and `game_state`.
 ///
@@ -36,15 +36,16 @@ pub fn apply_move_to(
     game_state: &mut rules::GameState,
     m: &Move
 ) {
+    let (source, dest) = (m.0, m.1);
+
     // If a rook is taken, remove its castling option. Needs to be checked before we update board.
-    if m.1 == pos("a1") && get_square(board, &pos("a1")) == SQ_WH_R {
-        game_state.castling &= !CASTLING_WH_Q;
-    } else if m.1 == pos("h1") && get_square(board, &pos("h1")) == SQ_WH_R {
-        game_state.castling &= !CASTLING_WH_K;
-    } else if m.1 == pos("a8") && get_square(board, &pos("a8")) == SQ_BL_R {
-        game_state.castling &= !CASTLING_BL_Q;
-    } else if m.1 == pos("h8") && get_square(board, &pos("h8")) == SQ_BL_R {
-        game_state.castling &= !CASTLING_BL_K;
+    // Note that we only check for a piece going to rook's initial position: it means the rook
+    // either moved previously, or it has been taken.
+    match source {
+        A1 => { game_state.castling &= !CASTLING_WH_Q; }
+        H1 => { game_state.castling &= !CASTLING_WH_K; }
+        A8 => { game_state.castling &= !CASTLING_BL_Q; }
+        H8 => { game_state.castling &= !CASTLING_BL_K; }
     }
 
     // Update board and game state.
@@ -61,34 +62,34 @@ pub fn apply_move_to(
     }
     // Else, check if the king or a rook moved to update castling options.
     else {
-        let piece = get_square(board, &m.1);
-        if is_white(piece) && game_state.castling & CASTLING_WH_MASK != 0 {
-            match get_type(piece) {
-                SQ_K => {
-                    if m.0 == pos("e1") {
+        let color = board.get_color(dest);
+        if color == WHITE && game_state.castling & CASTLING_WH_MASK != 0 {
+            match board.get_piece(dest) {
+                KING => {
+                    if source == E1 {
                         game_state.castling &= !CASTLING_WH_MASK;
                     }
                 }
-                SQ_R => {
-                    if m.0 == pos("a1") {
+                ROOK => {
+                    if source == A1 {
                         game_state.castling &= !CASTLING_WH_Q;
-                    } else if m.0 == pos("h1") {
+                    } else if source == H1 {
                         game_state.castling &= !CASTLING_WH_K;
                     }
                 }
                 _ => {}
             }
-        } else if is_black(piece) && game_state.castling & CASTLING_BL_MASK != 0 {
-            match get_type(piece) {
-                SQ_K => {
-                    if m.0 == pos("e8") {
+        } else if color == BLACK && game_state.castling & CASTLING_BL_MASK != 0 {
+            match board.get_piece(dest) {
+                KING => {
+                    if source == E8 {
                         game_state.castling &= !CASTLING_BL_MASK;
                     }
                 }
-                SQ_R => {
-                    if m.0 == pos("a8") {
+                ROOK => {
+                    if source == A8 {
                         game_state.castling &= !CASTLING_BL_Q;
-                    } else if m.0 == pos("h8") {
+                    } else if source == H8 {
                         game_state.castling &= !CASTLING_BL_K;
                     }
                 }
@@ -103,46 +104,47 @@ pub fn apply_move_to_board(board: &mut Board, m: &Move) {
     if let Some(castle) = get_castle(m) {
         match castle {
             CASTLING_WH_K => {
-                move_piece(board, &START_WH_K_POS, &pos("g1"));
-                move_piece(board, &pos("h1"), &pos("f1"));
+                board.move_square(START_WH_K_POS, G1);
+                board.move_square(H1, F1);
             }
             CASTLING_WH_Q => {
-                move_piece(board, &START_WH_K_POS, &pos("c1"));
-                move_piece(board, &pos("a1"), &pos("d1"));
+                board.move_square(START_WH_K_POS, C1);
+                board.move_square(A1, D1);
             }
             CASTLING_BL_K => {
-                move_piece(board, &START_BL_K_POS, &pos("g8"));
-                move_piece(board, &pos("h8"), &pos("f8"));
+                board.move_square(START_BL_K_POS, G8);
+                board.move_square(H8, F8);
             }
             CASTLING_BL_Q => {
-                move_piece(board, &START_BL_K_POS, &pos("c8"));
-                move_piece(board, &pos("a8"), &pos("d8"));
+                board.move_square(START_BL_K_POS, C8);
+                board.move_square(A8, D8);
             }
             _ => {}
         }
     } else {
-        move_piece(board, &m.0, &m.1);
+        board.move_square(m.0, m.1);
         if let Some(prom_type) = m.2 {
-            let color = get_color(get_square(board, &m.1));
-            set_square(board, &m.1, color|prom_type);
+            let color = board.get_color(m.1);
+            board.set_square(m.1, color, prom_type);
         }
     }
 }
 
 /// Get the corresponding castling flag for this move.
 pub fn get_castle(m: &Move) -> Option<u8> {
-    if m.0 == pos("e1") {
-        if m.1 == pos("c1") {
+    let (source, dest) = (m.0, m.1);
+    if source == E1 {
+        if dest == C1 {
             Some(CASTLING_WH_Q)
-        } else if m.1 == pos("g1") {
+        } else if dest == G1 {
             Some(CASTLING_WH_K)
         } else {
             None
         }
-    } else if m.0 == pos("e8") {
-        if m.1 == pos("c8") {
+    } else if source == E8 {
+        if dest == C8 {
             Some(CASTLING_BL_Q)
-        } else if m.1 == pos("g8") {
+        } else if dest == G8 {
             Some(CASTLING_BL_K)
         } else {
             None
@@ -155,10 +157,10 @@ pub fn get_castle(m: &Move) -> Option<u8> {
 /// Get the move for this castle.
 pub fn get_castle_move(castle: u8) -> Move {
     match castle {
-        CASTLING_WH_Q => (pos("e1"), pos("c1"), None),
-        CASTLING_WH_K => (pos("e1"), pos("g1"), None),
-        CASTLING_BL_Q => (pos("e8"), pos("c8"), None),
-        CASTLING_BL_K => (pos("e8"), pos("g8"), None),
+        CASTLING_WH_Q => (E1, C1, None),
+        CASTLING_WH_K => (E1, G1, None),
+        CASTLING_BL_Q => (E8, C8, None),
+        CASTLING_BL_K => (E8, G8, None),
         _ => panic!("Illegal castling requested: {:08b}", castle),
     }
 }
@@ -170,52 +172,59 @@ mod tests {
 
     #[test]
     fn test_apply_move_to_board() {
-        let mut b = new_empty();
+        let mut b = Board::new_empty();
 
         // Put 2 enemy knights on board.
-        set_square(&mut b, &pos("d4"), SQ_WH_N);
-        set_square(&mut b, &pos("f4"), SQ_BL_N);
+        b.set_square(D4, WHITE, KNIGHT);
+        b.set_square(F4, BLACK, KNIGHT);
         // Move white knight in a position attacked by black knight.
-        apply_move_to_board(&mut b, &(pos("d4"), pos("e6"), None));
-        assert_eq!(get_square(&b, &pos("d4")), SQ_E);
-        assert_eq!(get_square(&b, &pos("e6")), SQ_WH_N);
-        assert_eq!(num_pieces(&b), 2);
+        apply_move_to_board(&mut b, &(D4, E6, None));
+        assert!(b.is_empty(D4));
+        assert_eq!(b.get_color(E6), WHITE);
+        assert_eq!(b.get_piece(E6), KNIGHT);
+        assert_eq!(b.num_pieces(), 2);
         // Sack it with black knight
-        apply_move_to_board(&mut b, &(pos("f4"), pos("e6"), None));
-        assert_eq!(get_square(&b, &pos("e6")), SQ_BL_N);
-        assert_eq!(num_pieces(&b), 1);
+        apply_move_to_board(&mut b, &(F4, E6, None));
+        assert_eq!(b.get_color(E6), BLACK);
+        assert_eq!(b.get_piece(E6), KNIGHT);
+        assert_eq!(b.num_pieces(), 1);
     }
 
     #[test]
     fn test_apply_move_to_castling() {
-        let mut b = new();
+        let mut b = Board::new();
         let mut gs = rules::GameState::new();
         assert_eq!(gs.castling, CASTLING_MASK);
 
         // On a starting board, start by making place for all castles.
-        clear_square(&mut b, &pos("b1"));
-        clear_square(&mut b, &pos("c1"));
-        clear_square(&mut b, &pos("d1"));
-        clear_square(&mut b, &pos("f1"));
-        clear_square(&mut b, &pos("g1"));
-        clear_square(&mut b, &pos("b8"));
-        clear_square(&mut b, &pos("c8"));
-        clear_square(&mut b, &pos("d8"));
-        clear_square(&mut b, &pos("f8"));
-        clear_square(&mut b, &pos("g8"));
+        b.clear_square(B1);
+        b.clear_square(C1);
+        b.clear_square(D1);
+        b.clear_square(F1);
+        b.clear_square(G1);
+        b.clear_square(B8);
+        b.clear_square(C8);
+        b.clear_square(D8);
+        b.clear_square(F8);
+        b.clear_square(G8);
         // White queen-side castling.
         apply_move_to(&mut b, &mut gs, &parse_move("e1c1"));
-        assert!(is_piece(get_square(&b, &pos("c1")), SQ_WH_K));
-        assert!(is_piece(get_square(&b, &pos("d1")), SQ_WH_R));
-        assert!(is_empty(&b, &pos("a1")));
-        assert!(is_empty(&b, &pos("e1")));
+        assert_eq!(b.get_color(C1), WHITE);
+        assert_eq!(b.get_piece(C1), KING);
+        assert_eq!(b.get_color(D1), WHITE);
+        assert_eq!(b.get_piece(D1), ROOK);
+        assert!(b.is_empty(A1));
+        assert!(b.is_empty(E1));
         assert_eq!(gs.castling, CASTLING_BL_MASK);
         // Black king-side castling.
         apply_move_to(&mut b, &mut gs, &parse_move("e8g8"));
-        assert!(is_piece(get_square(&b, &pos("g8")), SQ_BL_K));
-        assert!(is_piece(get_square(&b, &pos("f8")), SQ_BL_R));
-        assert!(is_empty(&b, &pos("h8")));
-        assert!(is_empty(&b, &pos("e8")));
+        assert_eq!(b.get_color(G1), BLACK);
+        assert_eq!(b.get_piece(G1), KING);
+        assert_eq!(b.get_color(F1), BLACK);
+        assert_eq!(b.get_piece(F1), ROOK);
+        assert!(b.is_empty(H8));
+        assert!(b.is_empty(E8));
+        // At the end, no more castling options for both sides.
         assert_eq!(gs.castling, 0);
     }
 

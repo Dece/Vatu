@@ -6,9 +6,9 @@ pub type Bitboard = u64;
 /// Color type, used to index `Board.color`.
 pub type Color = usize;
 
-const WHITE: usize = 0;
-const BLACK: usize = 1;
-const NUM_COLORS: usize = 2;
+pub const WHITE: usize = 0;
+pub const BLACK: usize = 1;
+pub const NUM_COLORS: usize = 2;
 
 /// Get opposite color.
 #[inline]
@@ -26,13 +26,13 @@ pub fn color_to_string(color: Color) -> String {
 /// Piece type, used to index `Board.piece`.
 pub type Piece = usize;
 
-const PAWN: usize = 0;
-const BISHOP: usize = 1;
-const KNIGHT: usize = 2;
-const ROOK: usize = 3;
-const QUEEN: usize = 4;
-const KING: usize = 5;
-const NUM_PIECES: usize = 6;
+pub const PAWN: usize = 0;
+pub const BISHOP: usize = 1;
+pub const KNIGHT: usize = 2;
+pub const ROOK: usize = 3;
+pub const QUEEN: usize = 4;
+pub const KING: usize = 5;
+pub const NUM_PIECES: usize = 6;
 
 /// Coords (file, rank) of a square on a board.
 pub type Square = i8;
@@ -195,17 +195,22 @@ impl Board {
         self.colors[WHITE] | self.colors[BLACK]
     }
 
+    /// True if this square is empty.
+    pub fn is_empty(&self, square: Square) -> bool {
+        self.combined() & bit_pos(square) == 0
+    }
+
     /// Get color type at position. It must hold a piece!
-    pub fn get_color(&self, p: Square) -> Color {
-        let bp = bit_pos(p);
+    pub fn get_color(&self, square: Square) -> Color {
+        let bp = bit_pos(square);
         if (self.colors[WHITE] & bp) == 1 { WHITE }
         else if (self.pieces[BLACK] & bp) == 1 { BLACK }
         else { panic!("Empty square.") }
     }
 
     /// Get piece type at position. It must hold a piece!
-    pub fn get_piece(&self, p: Square) -> Piece {
-        let bp = bit_pos(p);
+    pub fn get_piece(&self, square: Square) -> Piece {
+        let bp = bit_pos(square);
         if (self.pieces[PAWN] & bp) == 1 { PAWN }
         else if (self.pieces[BISHOP] & bp) == 1 { BISHOP }
         else if (self.pieces[KNIGHT] & bp) == 1 { KNIGHT }
@@ -217,31 +222,31 @@ impl Board {
 
     /// Set a new value for the square at this position.
     #[inline]
-    pub fn set_square(&mut self, p: Square, color: Color, piece: Piece) {
-        self.colors[color] |= bit_pos(p);
-        self.pieces[piece] |= bit_pos(p);
+    pub fn set_square(&mut self, square: Square, color: Color, piece: Piece) {
+        self.colors[color] |= bit_pos(square);
+        self.pieces[piece] |= bit_pos(square);
     }
 
     /// Set the square empty at this position.
     #[inline]
-    pub fn clear_square(&mut self, p: Square) {
-        for color in 0..NUM_COLORS { self.colors[color] &= !bit_pos(p); }
-        for piece in 0..NUM_PIECES { self.pieces[piece] &= !bit_pos(p); }
+    pub fn clear_square(&mut self, square: Square) {
+        for color in 0..NUM_COLORS { self.colors[color] &= !bit_pos(square); }
+        for piece in 0..NUM_PIECES { self.pieces[piece] &= !bit_pos(square); }
     }
 
     /// Move a piece from a position to another, clearing initial position.
     #[inline]
-    pub fn move_square(&mut self, from: Square, to: Square) {
-        self.set_square(to, self.get_color(from), self.get_piece(from));
-        self.clear_square(from);
+    pub fn move_square(&mut self, source: Square, dest: Square) {
+        self.set_square(dest, self.get_color(source), self.get_piece(source));
+        self.clear_square(source);
     }
 
     /// Find position of this king.
     pub fn find_king(&self, color: Color) -> Option<Square> {
         let king_bb = self.colors[color] & self.pieces[KING];
-        for p in 0..64 {
-            if king_bb & bit_pos(p) == 1 {
-                return Some(p)
+        for square in 0..64 {
+            if king_bb & bit_pos(square) == 1 {
+                return Some(square)
             }
         }
         None
@@ -261,15 +266,15 @@ impl Board {
     /// Debug only: write a text view of the board.
     pub fn draw(&self, f: &mut dyn std::io::Write) {
         let cbb = self.colors[WHITE] | self.colors[BLACK];
-        for r in (0..8).rev() {
-            let mut rank = String::with_capacity(8);
-            for f in 0..8 {
-                let p = f * 8 + r;
-                let bp = bit_pos(p);
+        for rank in (0..8).rev() {
+            let mut rank_str = String::with_capacity(8);
+            for file in 0..8 {
+                let square = file * 8 + rank;
+                let bp = bit_pos(square);
                 let piece_char = if cbb & bp == 0 {
                     '.'
                 } else {
-                    let (color, piece) = (self.get_color(p), self.get_piece(p));
+                    let (color, piece) = (self.get_color(square), self.get_piece(square));
                     let mut piece_char = match piece {
                         PAWN => 'p',
                         BISHOP => 'b',
@@ -283,9 +288,9 @@ impl Board {
                     }
                     piece_char
                 };
-                rank.push(piece_char);
+                rank_str.push(piece_char);
             }
-            writeln!(f, "{} {}", r + 1, rank).unwrap();
+            writeln!(f, "{} {}", rank + 1, rank_str).unwrap();
         }
         write!(f, "  abcdefgh").unwrap();
     }

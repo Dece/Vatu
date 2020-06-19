@@ -17,9 +17,9 @@ use crate::notation;
 /// - `fullmove`: same
 #[derive(Debug, PartialEq, Clone, Hash)]
 pub struct GameState {
-    pub color: u8,
+    pub color: Color,
     pub castling: u8,
-    pub en_passant: Option<Pos>,
+    pub en_passant: Option<Square>,
     pub halfmove: i32,
     pub fullmove: i32,
 }
@@ -27,7 +27,7 @@ pub struct GameState {
 impl GameState {
     pub const fn new() -> GameState {
         GameState {
-            color: SQ_WH,
+            color: WHITE,
             castling: CASTLING_MASK,
             en_passant: None,
             halfmove: 0,
