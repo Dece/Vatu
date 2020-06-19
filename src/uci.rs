@@ -7,8 +7,8 @@ use std::thread;
 
 use crate::analysis::AnalysisInfo;
 use crate::engine;
-use crate::movement::Move;
-use crate::notation;
+use crate::fen;
+use crate::movement::{Move, UCI_NULL_MOVE_STR};
 
 const VATU_NAME: &str = env!("CARGO_PKG_NAME");
 const VATU_AUTHORS: &str = env!("CARGO_PKG_AUTHORS");
@@ -64,7 +64,7 @@ pub enum UciCmd {
 #[derive(Debug, Clone)]
 pub enum PositionArgs {
     Startpos,
-    Fen(notation::Fen),
+    Fen(fen::Fen),
     Moves(Vec<Move>),
 }
 
@@ -271,7 +271,7 @@ impl Uci {
                     s.push_str(&format!(" nps {}", n));
                 }
                 AnalysisInfo::CurrentMove(m) => {
-                    s.push_str(&format!(" currmove {}", notation::move_to_string(m)));
+                    s.push_str(&format!(" currmove {}", m.to_uci_string()));
                 }
             }
         }
@@ -280,11 +280,10 @@ impl Uci {
 
     /// Send best move.
     fn send_bestmove(&mut self, m: &Option<Move>) {
-        let move_str = match m {
-            Some(m) => notation::move_to_string(m),
-            None => notation::NULL_MOVE.to_string(),
-        };
-        self.send(&format!("bestmove {}", move_str));
+        self.send(&format!(
+            "bestmove {}",
+            if let Some(m) = m { &m.to_uci_string() } else { UCI_NULL_MOVE_STR }
+        ));
     }
 }
 
@@ -319,7 +318,7 @@ fn parse_position_command(fields: &[&str]) -> UciCmd {
         match fields[i] {
             // Subcommand "fen" is followed by a FEN string.
             "fen" => {
-                if let Some(fen) = notation::parse_fen_fields(&fields[i + 1 .. i + 7]) {
+                if let Some(fen) = fen::parse_fen_fields(&fields[i + 1 .. i + 7]) {
                     subcommands.push(PositionArgs::Fen(fen))
                 } else {
                     return UciCmd::Unknown(format!("Bad format for position fen"))
@@ -332,7 +331,7 @@ fn parse_position_command(fields: &[&str]) -> UciCmd {
             "moves" => {
                 let mut moves = vec!();
                 while i + 1 < num_fields {
-                    moves.push(notation::parse_move(fields[i + 1]));
+                    moves.push(Move::from_uci_string(fields[i + 1]));
                     i += 1;
                 }
                 subcommands.push(PositionArgs::Moves(moves));

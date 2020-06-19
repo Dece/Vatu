@@ -10,7 +10,7 @@ const START_WH_K_POS: Square = E1;
 const START_BL_K_POS: Square = E8;
 
 /// A movement, with before/after positions and optional promotion.
-#[derive(PartialEq)]
+#[derive(Clone, PartialEq)]
 pub struct Move {
     pub source: Square,
     pub dest: Square,
@@ -23,7 +23,8 @@ impl fmt::Debug for Move {
     }
 }
 
-pub const SAN_NULL_MOVE: &str = "0000";
+/// Null move string in UCI exchanges.
+pub const UCI_NULL_MOVE_STR: &str = "0000";
 
 impl Move {
     /// Build a move from `source` to `dest`, no promotion.
