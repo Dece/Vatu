@@ -1,7 +1,7 @@
 //! Board statistics used for heuristics.
 
 use crate::board::*;
-use crate::rules;
+use crate::rules::GameState;
 
 /// Storage for board pieces stats.
 #[derive(Debug, Clone, PartialEq)]
@@ -39,6 +39,98 @@ impl BoardStats {
         self.num_isolated_pawns = 0;
         self.mobility = 0;
     }
+
+    /// Fill `stats` from given `board` and `game_state`.
+    ///
+    /// Only the current playing side stats are created,
+    /// prepare the game_state accordingly.
+    pub fn compute(&mut self, board: &Board, game_state: &GameState) {
+        self.reset();
+        let color = game_state.color;
+        // Compute mobility for all pieces.
+        self.mobility = rules::get_player_moves(board, game_state, true).len() as i32;
+        // Compute amount of each piece.
+        for (piece, p) in get_piece_iterator(board) {
+            let (pos_f, pos_r) = p;
+            if piece == SQ_E || !is_color(piece, color) {
+                continue
+            }
+            match get_type(piece) {
+                SQ_R => stats.num_rooks += 1,
+                SQ_N => stats.num_knights += 1,
+                SQ_B => stats.num_bishops += 1,
+                SQ_Q => stats.num_queens += 1,
+                SQ_K => stats.num_kings += 1,
+                SQ_P => {
+                    stats.num_pawns += 1;
+                    let mut doubled = false;
+                    let mut isolated = true;
+                    let mut backward = true;
+                    for r in 0..8 {
+                        // Check for doubled pawns.
+                        if
+                            !doubled &&
+                            is_piece(get_square(board, &(pos_f, r)), color|SQ_P) && r != pos_r
+                        {
+                            doubled = true;
+                        }
+                        // Check for isolated pawns.
+                        if
+                            isolated &&
+                            (
+                                // Check on the left file if not on a-file...
+                                (
+                                    pos_f > POS_MIN &&
+                                    is_piece(get_square(board, &(pos_f - 1, r)), color|SQ_P)
+                                ) ||
+                                // Check on the right file if not on h-file...
+                                (
+                                    pos_f < POS_MAX &&
+                                    is_piece(get_square(board, &(pos_f + 1, r)), color|SQ_P)
+                                )
+                            )
+                        {
+                            isolated = false;
+                        }
+                        // Check for backward pawns.
+                        if backward {
+                            if color == SQ_WH && r <= pos_r {
+                                if (
+                                    pos_f > POS_MIN &&
+                                    is_type(get_square(board, &(pos_f - 1, r)), SQ_P)
+                                ) || (
+                                    pos_f < POS_MAX &&
+                                    is_type(get_square(board, &(pos_f + 1, r)), SQ_P)
+                                ) {
+                                    backward = false;
+                                }
+                            } else if color == SQ_BL && r >= pos_r {
+                                if (
+                                    pos_f > POS_MIN &&
+                                    is_type(get_square(board, &(pos_f - 1, r)), SQ_P)
+                                ) || (
+                                    pos_f < POS_MAX &&
+                                    is_type(get_square(board, &(pos_f + 1, r)), SQ_P)
+                                ) {
+                                    backward = false;
+                                }
+                            }
+                        }
+                    }
+                    if doubled {
+                        stats.num_doubled_pawns += 1;
+                    }
+                    if isolated {
+                        stats.num_isolated_pawns += 1;
+                    }
+                    if backward {
+                        stats.num_backward_pawns += 1;
+                    }
+                },
+                _ => {}
+            }
+        }
+    }
 }
 
 impl std::fmt::Display for BoardStats {
@@ -57,7 +149,7 @@ impl std::fmt::Display for BoardStats {
 /// Create two new BoardStats objects from the board, for both sides.
 ///
 /// See `compute_stats_into` for details.
-pub fn compute_stats(board: &Board, game_state: &rules::GameState) -> (BoardStats, BoardStats) {
+pub fn compute_stats(board: &Board, game_state: &GameState) -> (BoardStats, BoardStats) {
     let mut stats = (BoardStats::new(), BoardStats::new());
     compute_stats_into(board, game_state, &mut stats);
     stats
@@ -78,101 +170,6 @@ pub fn compute_stats_into(
     compute_color_stats_into(board, &gs, &mut stats.1);
 }
 
-/// Fill `stats` from given `board` and `game_state`.
-///
-/// Only the current playing side stats are created,
-/// prepare the game_state accordingly.
-pub fn compute_color_stats_into(
-    board: &Board,
-    game_state: &rules::GameState,
-    stats: &mut BoardStats,
-) {
-    stats.reset();
-    let color = game_state.color;
-    // Compute mobility for all pieces.
-    stats.mobility = rules::get_player_moves(board, game_state, true).len() as i32;
-    // Compute amount of each piece.
-    for (piece, p) in get_piece_iterator(board) {
-        let (pos_f, pos_r) = p;
-        if piece == SQ_E || !is_color(piece, color) {
-            continue
-        }
-        match get_type(piece) {
-            SQ_R => stats.num_rooks += 1,
-            SQ_N => stats.num_knights += 1,
-            SQ_B => stats.num_bishops += 1,
-            SQ_Q => stats.num_queens += 1,
-            SQ_K => stats.num_kings += 1,
-            SQ_P => {
-                stats.num_pawns += 1;
-                let mut doubled = false;
-                let mut isolated = true;
-                let mut backward = true;
-                for r in 0..8 {
-                    // Check for doubled pawns.
-                    if
-                        !doubled &&
-                        is_piece(get_square(board, &(pos_f, r)), color|SQ_P) && r != pos_r
-                    {
-                        doubled = true;
-                    }
-                    // Check for isolated pawns.
-                    if
-                        isolated &&
-                        (
-                            // Check on the left file if not on a-file...
-                            (
-                                pos_f > POS_MIN &&
-                                is_piece(get_square(board, &(pos_f - 1, r)), color|SQ_P)
-                            ) ||
-                            // Check on the right file if not on h-file...
-                            (
-                                pos_f < POS_MAX &&
-                                is_piece(get_square(board, &(pos_f + 1, r)), color|SQ_P)
-                            )
-                        )
-                    {
-                        isolated = false;
-                    }
-                    // Check for backward pawns.
-                    if backward {
-                        if color == SQ_WH && r <= pos_r {
-                            if (
-                                pos_f > POS_MIN &&
-                                is_type(get_square(board, &(pos_f - 1, r)), SQ_P)
-                            ) || (
-                                pos_f < POS_MAX &&
-                                is_type(get_square(board, &(pos_f + 1, r)), SQ_P)
-                            ) {
-                                backward = false;
-                            }
-                        } else if color == SQ_BL && r >= pos_r {
-                            if (
-                                pos_f > POS_MIN &&
-                                is_type(get_square(board, &(pos_f - 1, r)), SQ_P)
-                            ) || (
-                                pos_f < POS_MAX &&
-                                is_type(get_square(board, &(pos_f + 1, r)), SQ_P)
-                            ) {
-                                backward = false;
-                            }
-                        }
-                    }
-                }
-                if doubled {
-                    stats.num_doubled_pawns += 1;
-                }
-                if isolated {
-                    stats.num_isolated_pawns += 1;
-                }
-                if backward {
-                    stats.num_backward_pawns += 1;
-                }
-            },
-            _ => {}
-        }
-    }
-}
 
 #[cfg(test)]
 mod tests {

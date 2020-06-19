@@ -1,7 +1,7 @@
 use std::fmt;
 
 use crate::board;
-use crate::movement::{self, Move};
+use crate::movement::Move;
 use crate::rules;
 use crate::stats;
 
@@ -25,7 +25,7 @@ impl Node {
 
     /// Apply a move to this node.
     pub fn apply_move(&mut self, m: &Move) {
-        movement::apply_move_to(&mut self.board, &mut self.game_state, m);
+        m.apply_to(&mut self.board, &mut self.game_state);
     }
 
     /// Return player moves from this node.

@@ -103,6 +103,18 @@ pub const H6: Square = 61;
 pub const H7: Square = 62;
 pub const H8: Square = 63;
 
+/// Get square from file and rank, both starting from 0.
+#[inline]
+pub const fn sq(file: i8, rank: i8) -> Square { file * 8 + rank }
+
+/// Get file from square.
+#[inline]
+pub const fn sq_file(square: Square) -> i8 { square / 8 }
+
+/// Get rank from square.
+#[inline]
+pub const fn sq_rank(square: Square) -> i8 { square % 8 }
+
 /// Get bit mask of `p` in a bitboard.
 #[inline]
 pub const fn bit_pos(square: Square) -> u64 { 1 << square }
@@ -299,7 +311,6 @@ impl Board {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::notation;
 
     #[test]
     fn test_opposite() {
@@ -327,7 +338,7 @@ mod tests {
     #[test]
     fn test_new_from_fen() {
         let b1 = Board::new();
-        let b2 = Board::new_from_fen(notation::FEN_START);
+        let b2 = Board::new_from_fen(crate::fen::FEN_START);
         assert!(b1 == b2);
     }
 

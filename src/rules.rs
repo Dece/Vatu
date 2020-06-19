@@ -2,8 +2,11 @@
 
 use crate::board::*;
 use crate::castling::*;
-use crate::movement::{self, Move};
-use crate::notation;
+use crate::fen;
+use crate::movement::Move;
+
+const POS_MIN: i8 = 0;
+const POS_MAX: i8 = 7;
 
 /// Characteristics of the state of a game.
 ///
@@ -46,7 +49,7 @@ impl std::fmt::Display for GameState {
              - halfmove: {}\n\
              - fullmove: {}",
             color_to_string(self.color), self.castling,
-            notation::en_passant_to_string(self.en_passant),
+            fen::en_passant_to_string(self.en_passant),
             self.halfmove, self.fullmove
         )
     }
@@ -67,49 +70,57 @@ pub fn get_player_moves(
     let mut moves = Vec::with_capacity(256);
     for r in 0..8 {
         for f in 0..8 {
-            let p = (f, r);
-            if is_empty(board, &p) {
+            let square = sq(f, r);
+            if board.is_empty(square) {
                 continue
             }
-            if is_color(get_square(board, &p), game_state.color) {
-                moves.append(&mut get_piece_moves(board, &p, game_state, commit));
+            if board.get_color(square) == game_state.color {
+                moves.append(
+                    &mut get_piece_moves(board, game_state, square, game_state.color, commit)
+                );
             }
         }
     }
     moves
 }
 
-/// Get a list of moves for the piece at position `at`.
+/// Get a list of moves for the piece of `color` on `square`.
+///
+/// Use `board` and `game_state` to get the moves. `color` is the color
+/// of the piece on `square`; it could technically be found from the
+/// board but that would require an additional lookup and this function
+/// is always called in a context where the piece color is known.
 pub fn get_piece_moves(
     board: &Board,
-    at: &Pos,
     game_state: &GameState,
+    square: Square,
+    color: Color,
     commit: bool,
 ) -> Vec<Move> {
-    match get_square(board, at) {
-        p if is_piece(p, SQ_P) => get_pawn_moves(board, at, p, game_state, commit),
-        p if is_piece(p, SQ_B) => get_bishop_moves(board, at, p, game_state, commit),
-        p if is_piece(p, SQ_N) => get_knight_moves(board, at, p, game_state, commit),
-        p if is_piece(p, SQ_R) => get_rook_moves(board, at, p, game_state, commit),
-        p if is_piece(p, SQ_Q) => get_queen_moves(board, at, p, game_state, commit),
-        p if is_piece(p, SQ_K) => get_king_moves(board, at, p, game_state, commit),
+    match board.get_piece(square) {
+        PAWN => get_pawn_moves(board, game_state, square, color, commit),
+        BISHOP => get_bishop_moves(board, game_state, square, color, commit),
+        KNIGHT => get_knight_moves(board, game_state, square, color, commit),
+        ROOK => get_rook_moves(board, game_state, square, color, commit),
+        QUEEN => get_queen_moves(board, game_state, square, color, commit),
+        KING => get_king_moves(board, game_state, square, color, commit),
         _ => vec!(),
     }
 }
 
 fn get_pawn_moves(
     board: &Board,
-    at: &Pos,
-    piece: u8,
     game_state: &GameState,
+    square: Square,
+    color: Color,
     commit: bool,
 ) -> Vec<Move> {
-    let (f, r) = *at;
+    let (f, r) = (sq_file(square), sq_rank(square));
     let mut moves = vec!();
     // Direction: positive for white, negative for black.
-    let dir: i8 = if is_white(piece) { 1 } else { -1 };
+    let dir = if color == WHITE { 1 } else { -1 };
     // Check 1 or 2 square forward.
-    let move_len = if (is_white(piece) && r == 1) || (is_black(piece) && r == 6) { 2 } else { 1 };
+    let move_len = if (color == WHITE && r == 1) || (color == BLACK && r == 6) { 2 } else { 1 };
     for i in 1..=move_len {
         let forward_r = r + dir * i;
         if dir > 0 && forward_r > POS_MAX {
@@ -118,16 +129,14 @@ fn get_pawn_moves(
         if dir < 0 && forward_r < POS_MIN {
             return moves
         }
-        let forward: Pos = (f, forward_r);
+        let forward: Square = sq(f, forward_r);
         // If forward square is empty (and we are not jumping over an occupied square), add it.
-        if is_empty(board, &forward) && (i == 1 || is_empty(board, &(f, forward_r - dir))) {
+        if board.is_empty(forward) && (i == 1 || board.is_empty(sq(f, forward_r - dir))) {
+            let mut m = Move::new(square, forward);
             // Pawns that get to the opposite rank automatically promote as queens.
-            let prom = if (dir > 0 && forward_r == POS_MAX) || (dir < 0 && forward_r == POS_MIN) {
-                Some(SQ_Q)
-            } else {
-                None
-            };
-            let m = (*at, forward, prom);
+            if (dir > 0 && forward_r == POS_MAX) || (dir < 0 && forward_r == POS_MIN) {
+                m.promotion = Some(QUEEN)
+            }
             if can_register(commit, board, game_state, &m) {
                 moves.push(m);
             }
@@ -136,19 +145,26 @@ fn get_pawn_moves(
         if i == 1 {
             // First diagonal.
             if f - 1 >= POS_MIN {
-                let diag: Pos = (f - 1, forward_r);
-                if let Some(m) = move_on_enemy(piece, at, get_square(board, &diag), &diag) {
-                    if can_register(commit, board, game_state, &m) {
-                        moves.push(m);
+                let diag = sq(f - 1, forward_r);
+                if !board.is_empty(diag) {
+                    let diag_color = board.get_color(diag);
+                    if let Some(m) = move_if_enemy(color, square, diag_color, diag, true) {
+                        if can_register(commit, board, game_state, &m) {
+                            moves.push(m);
+                        }
                     }
+
                 }
             }
             // Second diagonal.
             if f + 1 <= POS_MAX {
-                let diag: Pos = (f + 1, forward_r);
-                if let Some(m) = move_on_enemy(piece, at, get_square(board, &diag), &diag) {
-                    if can_register(commit, board, game_state, &m) {
-                        moves.push(m);
+                let diag = sq(f + 1, forward_r);
+                if !board.is_empty(diag) {
+                    let diag_color = board.get_color(diag);
+                    if let Some(m) = move_if_enemy(color, square, diag_color, diag, true) {
+                        if can_register(commit, board, game_state, &m) {
+                            moves.push(m);
+                        }
                     }
                 }
             }
@@ -160,12 +176,12 @@ fn get_pawn_moves(
 
 fn get_bishop_moves(
     board: &Board,
-    at: &Pos,
-    piece: u8,
     game_state: &GameState,
+    square: Square,
+    color: Color,
     commit: bool,
 ) -> Vec<Move> {
-    let (f, r) = at;
+    let (f, r) = (sq_file(square), sq_rank(square));
     let mut views = [true; 4];  // Store diagonals where a piece blocks commit.
     let mut moves = Vec::with_capacity(8);
     for dist in 1..=7 {
@@ -173,24 +189,33 @@ fn get_bishop_moves(
             if !views[dir] {
                 continue
             }
-            let p = (f + offset.0 * dist, r + offset.1 * dist);
+
             // If this position is out of the board, stop looking in that direction.
-            if !is_valid_pos(p) {
+            let ray_f = f + offset.0 * dist;
+            if ray_f <= POS_MIN || ray_f >= POS_MAX {
                 views[dir] = false;
                 continue
             }
-            if is_empty(board, &p) {
-                let m = (*at, p, None);
+            let ray_r = r + offset.1 * dist;
+            if ray_r <= POS_MIN || ray_r >= POS_MAX {
+                views[dir] = false;
+                continue
+            }
+            let ray_square = sq(ray_f, ray_r);
+
+            if board.is_empty(ray_square) {
+                let m = Move::new(square, ray_square);
                 if can_register(commit, board, game_state, &m) {
                     moves.push(m);
                 }
             } else {
-                if let Some(m) = move_on_enemy(piece, at, get_square(board, &p), &p) {
+                let ray_color = board.get_color(ray_square);
+                if let Some(m) = move_if_enemy(color, square, ray_color, ray_square, false) {
                     if can_register(commit, board, game_state, &m) {
                         moves.push(m);
                     }
                 }
-                views[dir] = false;  // Stop looking in that direction.
+                views[dir] = false;
             }
         }
     }
@@ -199,26 +224,35 @@ fn get_bishop_moves(
 
 fn get_knight_moves(
     board: &Board,
-    at: &Pos,
-    piece: u8,
     game_state: &GameState,
+    square: Square,
+    color: Color,
     commit: bool,
 ) -> Vec<Move> {
-    let (f, r) = at;
+    let (f, r) = (sq_file(square), sq_rank(square));
     let mut moves = Vec::with_capacity(8);
     for offset in [(1, 2), (2, 1), (2, -1), (1, -2), (-1, -2), (-2, -1), (-2, 1), (-1, 2)].iter() {
-        let p = (f + offset.0, r + offset.1);
-        if !is_valid_pos(p) {
+        let ray_f = f + offset.0;
+        if ray_f <= POS_MIN || ray_f >= POS_MAX {
             continue
         }
-        if is_empty(board, &p) {
-            let m = (*at, p, None);
+        let ray_r = r + offset.1;
+        if ray_r <= POS_MIN || ray_r >= POS_MAX {
+            continue
+        }
+        let ray_square = sq(ray_f, ray_r);
+
+        if board.is_empty(ray_square) {
+            let m = Move::new(square, ray_square);
             if can_register(commit, board, game_state, &m) {
                 moves.push(m);
             }
-        } else if let Some(m) = move_on_enemy(piece, at, get_square(board, &p), &p) {
-            if can_register(commit, board, game_state, &m) {
-                moves.push(m);
+        } else {
+            let ray_color = board.get_color(ray_square);
+            if let Some(m) = move_if_enemy(color, square, ray_color, ray_square, false) {
+                if can_register(commit, board, game_state, &m) {
+                    moves.push(m);
+                }
             }
         }
     }
@@ -227,12 +261,12 @@ fn get_knight_moves(
 
 fn get_rook_moves(
     board: &Board,
-    at: &Pos,
-    piece: u8,
     game_state: &GameState,
+    square: Square,
+    color: Color,
     commit: bool,
 ) -> Vec<Move> {
-    let (f, r) = at;
+    let (f, r) = (sq_file(square), sq_rank(square));
     let mut moves = Vec::with_capacity(8);
     let mut views = [true; 4];  // Store lines where a piece blocks commit.
     for dist in 1..=7 {
@@ -240,19 +274,27 @@ fn get_rook_moves(
             if !views[dir] {
                 continue
             }
-            let p = (f + offset.0 * dist, r + offset.1 * dist);
-            // If this position is out of the board, stop looking in that direction.
-            if !is_valid_pos(p) {
+
+            let ray_f = f + offset.0 * dist;
+            if ray_f <= POS_MIN || ray_f >= POS_MAX {
                 views[dir] = false;
                 continue
             }
-            if is_empty(board, &p) {
-                let m = (*at, p, None);
+            let ray_r = r + offset.1 * dist;
+            if ray_r <= POS_MIN || ray_r >= POS_MAX {
+                views[dir] = false;
+                continue
+            }
+            let ray_square = sq(ray_f, ray_r);
+
+            if board.is_empty(ray_square) {
+                let m = Move::new(square, ray_square);
                 if can_register(commit, board, game_state, &m) {
                     moves.push(m);
                 }
             } else {
-                if let Some(m) = move_on_enemy(piece, at, get_square(board, &p), &p) {
+                let ray_color = board.get_color(ray_square);
+                if let Some(m) = move_if_enemy(color, square, ray_color, ray_square, false) {
                     if can_register(commit, board, game_state, &m) {
                         moves.push(m);
                     }
@@ -266,40 +308,49 @@ fn get_rook_moves(
 
 fn get_queen_moves(
     board: &Board,
-    at: &Pos,
-    piece: u8,
     game_state: &GameState,
-    commit: bool
+    square: Square,
+    color: Color,
+    commit: bool,
 ) -> Vec<Move> {
-    let mut moves = vec!();
+    let mut moves = Vec::with_capacity(16);
     // Easy way to get queen moves, but may be a bit quicker if everything was rewritten here.
-    moves.append(&mut get_bishop_moves(board, at, piece, game_state, commit));
-    moves.append(&mut get_rook_moves(board, at, piece, game_state, commit));
+    moves.append(&mut get_bishop_moves(board, game_state, square, color, commit));
+    moves.append(&mut get_rook_moves(board, game_state, square, color, commit));
     moves
 }
 
 fn get_king_moves(
     board: &Board,
-    at: &Pos,
-    piece: u8,
     game_state: &GameState,
-    commit: bool
+    square: Square,
+    color: Color,
+    commit: bool,
 ) -> Vec<Move> {
-    let (f, r) = at;
-    let mut moves = vec!();
+    let (f, r) = (sq_file(square), sq_rank(square));
+    let mut moves = Vec::with_capacity(8);
     for offset in [(-1, 1), (0, 1), (1, 1), (-1, 0), (1, 0), (-1, -1), (0, -1), (1, -1)].iter() {
-        let p = (f + offset.0, r + offset.1);
-        if !is_valid_pos(p) {
+        let ray_f = f + offset.0;
+        if ray_f <= POS_MIN || ray_f >= POS_MAX {
             continue
         }
-        if is_empty(board, &p) {
-            let m = (*at, p, None);
+        let ray_r = r + offset.1;
+        if ray_r <= POS_MIN || ray_r >= POS_MAX {
+            continue
+        }
+        let ray_square = sq(ray_f, ray_r);
+
+        if board.is_empty(ray_square) {
+            let m = Move::new(square, ray_square);
             if can_register(commit, board, game_state, &m) {
                 moves.push(m);
             }
-        } else if let Some(m) = move_on_enemy(piece, at, get_square(board, &p), &p) {
-            if can_register(commit, board, game_state, &m) {
-                moves.push(m);
+        } else {
+            let ray_color = board.get_color(ray_square);
+            if let Some(m) = move_if_enemy(color, square, ray_color, ray_square, false) {
+                if can_register(commit, board, game_state, &m) {
+                    moves.push(m);
+                }
             }
         }
     }
@@ -318,7 +369,7 @@ fn get_king_moves(
     // 6. The king does not end up in check.
 
     // First get the required castling rank and color mask for the player.
-    let (castling_rank, castling_color_mask) = if is_white(game_state.color) {
+    let (castling_rank, castling_color_mask) = if game_state.color == WHITE {
         (0, CASTLING_WH_MASK)
     } else {
         (7, CASTLING_BL_MASK)
@@ -327,8 +378,8 @@ fn get_king_moves(
     // Check for castling if the king is on its castling rank (R1)
     // and is not in check (R4).
     if
-        *r == castling_rank &&
-        !is_attacked(board, game_state, at)
+        r == castling_rank &&
+        !is_attacked(board, game_state, square)
     {
         // Check for both castling sides.
         for (path_files, opt_empty_file, castling_side_mask) in CASTLING_SIDES.iter() {
@@ -337,8 +388,10 @@ fn get_king_moves(
                 // Check that squares in the king's path are empty and not attacked (R3.1, R5, R6).
                 let mut path_is_clear = true;
                 for path_f in path_files {
-                    let p = (*path_f, castling_rank);
-                    if !is_empty(board, &p) || is_illegal(board, game_state, &(*at, p, None)) {
+                    let path_square = sq(*path_f, castling_rank);
+                    if
+                        !board.is_empty(path_square)
+                        || is_illegal(board, game_state, &Move::new(square, path_square)) {
                         path_is_clear = false;
                         break;
                     }
@@ -348,13 +401,13 @@ fn get_king_moves(
                 }
                 // Check that rook jumps over an empty square on queen-side (R3.2).
                 if let Some(rook_path_f) = opt_empty_file {
-                    let p = (*rook_path_f, castling_rank);
-                    if !is_empty(board, &p) {
+                    let rook_path_square = sq(*rook_path_f, castling_rank);
+                    if !board.is_empty(rook_path_square) {
                         continue;
                     }
                 }
                 let castle = castling_side_mask & castling_color_mask;
-                let m = movement::get_castle_move(castle);
+                let m = Move::get_castle_move(castle);
                 if can_register(commit, board, game_state, &m) {
                     moves.push(m);
                 }
@@ -375,20 +428,25 @@ fn can_register(commit: bool, board: &Board, game_state: &GameState, m: &Move) -
     !commit || !is_illegal(board, game_state, m)
 }
 
-/// Return a move from pos1 to pos2 if piece1 & piece2 are enemies.
-fn move_on_enemy(piece1: u8, pos1: &Pos, piece2: u8, pos2: &Pos) -> Option<Move> {
-    let color1 = get_color(piece1);
-    if is_color(piece2, opposite(color1)) {
+/// Return a move from `square1` to `square2` if colors are opposite.
+fn move_if_enemy(
+    color1: Color,
+    square1: Square,
+    color2: Color,
+    square2: Square,
+    is_pawn: bool,
+) -> Option<Move> {
+    if color2 == opposite(color1) {
         // Automatic queen promotion for pawns moving to the opposite rank.
-        let prom = if
-            is_piece(piece1, SQ_P) &&
-            ((is_white(piece1) && pos2.1 == POS_MAX) || (is_black(piece1) && pos2.1 == POS_MIN))
+        Some(if
+            is_pawn
+            && (color1 == WHITE && sq_rank(square2) == POS_MAX)
+            || (color1 == BLACK && sq_rank(square2) == POS_MIN)
         {
-            Some(SQ_Q)
+            Move::new_promotion(square1, square2, QUEEN)
         } else {
-            None
-        };
-        Some((*pos1, *pos2, prom))
+            Move::new(square1, square2)
+        })
     } else {
         None
     }
@@ -396,36 +454,38 @@ fn move_on_enemy(piece1: u8, pos1: &Pos, piece2: u8, pos2: &Pos) -> Option<Move>
 
 /// Check if a move is illegal.
 fn is_illegal(board: &Board, game_state: &GameState, m: &Move) -> bool {
-    if let Some(king_p) = find_king(board, game_state.color) {
+    if let Some(mut king_square) = board.find_king(game_state.color) {
         // Rule 1: a move is illegal if the king ends up in check.
         // If king moves, use its new position.
-        let king_p = if m.0 == king_p { m.1 } else { king_p };
+        if m.source == king_square {
+            king_square = m.dest
+        }
         let mut hypothetic_board = board.clone();
-        movement::apply_move_to_board(&mut hypothetic_board, m);
+        m.apply_to_board(&mut hypothetic_board);
         // Check if the move makes the player king in check.
-        if is_attacked(&hypothetic_board, &game_state, &king_p) {
+        if is_attacked(&hypothetic_board, &game_state, king_square) {
             return true
         }
     }
     false
 }
 
-/// Return true if the piece at position `at` is attacked.
+/// Return true if the piece on `square` is attacked.
 ///
 /// Check all possible enemy moves and return true when one of them
 /// ends up attacking the position.
 ///
 /// Beware that the game state must be coherent with the analysed
-/// square, i.e. if the piece at `at` is white, the game state should
-/// tell that it is white turn. If the square at `at` is empty, simply
+/// square, i.e. if the piece on `square` is white, the game state
+/// should tell that it is white turn. If `square` is empty, simply
 /// check if it is getting attacked by the opposite player.
-fn is_attacked(board: &Board, game_state: &GameState, at: &Pos) -> bool {
+fn is_attacked(board: &Board, game_state: &GameState, square: Square) -> bool {
     let mut enemy_game_state = game_state.clone();
     enemy_game_state.color = opposite(game_state.color);
     // Do not attempt to commit moves, just check for attacked squares.
     let enemy_moves = get_player_moves(board, &enemy_game_state, false);
     for m in enemy_moves.iter() {
-        if *at == m.1 {
+        if square == m.dest {
             return true
         }
     }
@@ -435,11 +495,10 @@ fn is_attacked(board: &Board, game_state: &GameState, at: &Pos) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::notation::parse_move;
 
     #[test]
     fn test_get_player_moves() {
-        let b = new();
+        let b = Board::new();
         let gs = GameState::new();
 
         // At first move, white has 16 pawn moves and 4 knight moves.
@@ -449,132 +508,132 @@ mod tests {
 
     #[test]
     fn test_get_pawn_moves() {
-        let mut b = new_empty();
+        let mut b = Board::new_empty();
         let gs = GameState::new();
 
         // Check that a pawn (here white queen's pawn) can move forward if the road is free.
-        set_square(&mut b, &pos("d3"), SQ_WH_P);
-        let moves = get_piece_moves(&b, &pos("d3"), &gs, true);
-        assert!(moves.len() == 1 && moves.contains( &parse_move("d3d4") ));
+        b.set_square(D3, WHITE, PAWN);
+        let moves = get_piece_moves(&b, &gs, D3, WHITE, true);
+        assert!(moves.len() == 1 && moves.contains(&Move::new(D3, D4)));
 
         // Check that a pawn (here white king's pawn) can move 2 square forward on first move.
-        set_square(&mut b, &pos("e2"), SQ_WH_P);
-        let moves = get_piece_moves(&b, &pos("e2"), &gs, true);
+        b.set_square(E2, WHITE, PAWN);
+        let moves = get_piece_moves(&b, &gs, E2, WHITE, true);
         assert_eq!(moves.len(), 2);
-        assert!(moves.contains( &parse_move("e2e3") ));
-        assert!(moves.contains( &parse_move("e2e4") ));
+        assert!(moves.contains(&Move::new(E2, E3)));
+        assert!(moves.contains(&Move::new(E2, E4)));
 
         // Check that a pawn cannot move forward if a piece is blocking its path.
         // 1. black pawn 2 square forward; only 1 square forward available from start pos.
-        set_square(&mut b, &pos("e4"), SQ_BL_P);
-        let moves = get_piece_moves(&b, &pos("e2"), &gs, true);
-        assert!(moves.len() == 1 && moves.contains( &parse_move("e2e3") ));
+        b.set_square(E4, BLACK, PAWN);
+        let moves = get_piece_moves(&b, &gs, E2, WHITE, true);
+        assert!(moves.len() == 1 && moves.contains(&Move::new(E2, E3)));
         // 2. black pawn 1 square forward; no square available.
-        set_square(&mut b, &pos("e3"), SQ_BL_P);
-        let moves = get_piece_moves(&b, &pos("e2"), &gs, true);
+        b.set_square(E3, BLACK, PAWN);
+        let moves = get_piece_moves(&b, &gs, E2, WHITE, true);
         assert_eq!(moves.len(), 0);
         // 3. remove the e4 black pawn; the white pawn should not be able to jump above e3 pawn.
-        clear_square(&mut b, &pos("e4"));
-        let moves = get_piece_moves(&b, &pos("e2"), &gs, true);
+        b.clear_square(E4);
+        let moves = get_piece_moves(&b, &gs, E2, WHITE, true);
         assert_eq!(moves.len(), 0);
 
         // Check that a pawn can take a piece diagonally.
-        set_square(&mut b, &pos("f3"), SQ_BL_P);
-        let moves = get_piece_moves(&b, &pos("e2"), &gs, true);
-        assert!(moves.len() == 1 && moves.contains( &parse_move("e2f3") ));
-        set_square(&mut b, &pos("d3"), SQ_BL_P);
-        let moves = get_piece_moves(&b, &pos("e2"), &gs, true);
+        b.set_square(F3, BLACK, PAWN);
+        let moves = get_piece_moves(&b, &gs, E2, WHITE, true);
+        assert!(moves.len() == 1 && moves.contains(&Move::new(E2, F3)));
+        b.set_square(D3, BLACK, PAWN);
+        let moves = get_piece_moves(&b, &gs, E2, WHITE, true);
         assert_eq!(moves.len(), 2);
-        assert!(moves.contains( &parse_move("e2f3") ));
-        assert!(moves.contains( &parse_move("e2d3") ));
+        assert!(moves.contains( &Move::new(E2, F3) ));
+        assert!(moves.contains( &Move::new(E2, D3) ));
 
         // Check that a pawn moving to the last rank leads to queen promotion.
         // 1. by simply moving forward.
-        set_square(&mut b, &pos("a7"), SQ_WH_P);
-        let moves = get_piece_moves(&b, &pos("a7"), &gs, true);
-        assert!(moves.len() == 1 && moves.contains( &parse_move("a7a8q") ));
+        b.set_square(A7, WHITE, PAWN);
+        let moves = get_piece_moves(&b, &gs, A7, WHITE, true);
+        assert!(moves.len() == 1 && moves.contains(&Move::new_promotion(A7, A8, QUEEN)));
     }
 
     #[test]
     fn test_get_bishop_moves() {
-        let mut b = new_empty();
+        let mut b = Board::new_empty();
         let gs = GameState::new();
 
         // A bishop has maximum range when it's in a center square.
-        set_square(&mut b, &pos("d4"), SQ_WH_B);
-        let moves = get_piece_moves(&b, &pos("d4"), &gs, true);
+        b.set_square(D4, WHITE, BISHOP);
+        let moves = get_piece_moves(&b, &gs, D4, WHITE, true);
         assert_eq!(moves.len(), 13);
         // Going top-right.
-        assert!(moves.contains( &parse_move("d4e5") ));
-        assert!(moves.contains( &parse_move("d4f6") ));
-        assert!(moves.contains( &parse_move("d4g7") ));
-        assert!(moves.contains( &parse_move("d4h8") ));
+        assert!(moves.contains(&Move::new(D4, E5)));
+        assert!(moves.contains(&Move::new(D4, F6)));
+        assert!(moves.contains(&Move::new(D4, G7)));
+        assert!(moves.contains(&Move::new(D4, H8)));
         // Going bottom-right.
-        assert!(moves.contains( &parse_move("d4e3") ));
-        assert!(moves.contains( &parse_move("d4f2") ));
-        assert!(moves.contains( &parse_move("d4g1") ));
+        assert!(moves.contains(&Move::new(D4, E3)));
+        assert!(moves.contains(&Move::new(D4, F2)));
+        assert!(moves.contains(&Move::new(D4, G1)));
         // Going bottom-left.
-        assert!(moves.contains( &parse_move("d4c3") ));
-        assert!(moves.contains( &parse_move("d4b2") ));
-        assert!(moves.contains( &parse_move("d4a1") ));
+        assert!(moves.contains(&Move::new(D4, C3)));
+        assert!(moves.contains(&Move::new(D4, B2)));
+        assert!(moves.contains(&Move::new(D4, A1)));
         // Going top-left.
-        assert!(moves.contains( &parse_move("d4c5") ));
-        assert!(moves.contains( &parse_move("d4b6") ));
-        assert!(moves.contains( &parse_move("d4a7") ));
+        assert!(moves.contains(&Move::new(D4, C5)));
+        assert!(moves.contains(&Move::new(D4, B6)));
+        assert!(moves.contains(&Move::new(D4, A7)));
 
         // When blocking commit to one square with friendly piece, lose 2 moves.
-        set_square(&mut b, &pos("b2"), SQ_WH_P);
-        assert_eq!(get_piece_moves(&b, &pos("d4"), &gs, true).len(), 11);
+        b.set_square(B2, WHITE, PAWN);
+        assert_eq!(get_piece_moves(&b, &gs, D4, WHITE, true).len(), 11);
 
         // When blocking commit to one square with enemy piece, lose only 1 move.
-        set_square(&mut b, &pos("b2"), SQ_BL_P);
-        assert_eq!(get_piece_moves(&b, &pos("d4"), &gs, true).len(), 12);
+        b.set_square(B2, BLACK, PAWN);
+        assert_eq!(get_piece_moves(&b, &gs, D4, WHITE, true).len(), 12);
     }
 
     #[test]
     fn test_get_knight_moves() {
-        let mut b = new_empty();
+        let mut b = Board::new_empty();
         let gs = GameState::new();
 
         // A knight never has blocked commit; if it's in the center of the board, it can have up to
         // 8 moves.
-        set_square(&mut b, &pos("d4"), SQ_WH_N);
-        assert_eq!(get_piece_moves(&b, &pos("d4"), &gs, true).len(), 8);
+        b.set_square(D4, WHITE, KNIGHT);
+        assert_eq!(get_piece_moves(&b, &gs, D4, WHITE, true).len(), 8);
 
         // If on a side if has only 4 moves.
-        set_square(&mut b, &pos("a4"), SQ_WH_N);
-        assert_eq!(get_piece_moves(&b, &pos("a4"), &gs, true).len(), 4);
+        b.set_square(A4, WHITE, KNIGHT);
+        assert_eq!(get_piece_moves(&b, &gs, A4, WHITE, true).len(), 4);
 
         // And in a corner, only 2 moves.
-        set_square(&mut b, &pos("a1"), SQ_WH_N);
-        assert_eq!(get_piece_moves(&b, &pos("a1"), &gs, true).len(), 2);
+        b.set_square(A1, WHITE, KNIGHT);
+        assert_eq!(get_piece_moves(&b, &gs, A1, WHITE, true).len(), 2);
 
         // Add 2 friendly pieces and it is totally blocked.
-        set_square(&mut b, &pos("b3"), SQ_WH_P);
-        set_square(&mut b, &pos("c2"), SQ_WH_P);
-        assert_eq!(get_piece_moves(&b, &pos("a1"), &gs, true).len(), 0);
+        b.set_square(B3, WHITE, PAWN);
+        b.set_square(C2, WHITE, PAWN);
+        assert_eq!(get_piece_moves(&b, &gs, A1, WHITE, true).len(), 0);
     }
 
     #[test]
     fn test_get_rook_moves() {
-        let mut b = new_empty();
+        let mut b = Board::new_empty();
         let gs = GameState::new();
 
-        set_square(&mut b, &pos("d4"), SQ_WH_R);
-        assert_eq!(get_piece_moves(&b, &pos("d4"), &gs, true).len(), 14);
-        set_square(&mut b, &pos("d6"), SQ_BL_P);
-        assert_eq!(get_piece_moves(&b, &pos("d4"), &gs, true).len(), 12);
-        set_square(&mut b, &pos("d6"), SQ_WH_P);
-        assert_eq!(get_piece_moves(&b, &pos("d4"), &gs, true).len(), 11);
+        b.set_square(D4, WHITE, ROOK);
+        assert_eq!(get_piece_moves(&b, &gs, D4, WHITE, true).len(), 14);
+        b.set_square(D6, BLACK, PAWN);
+        assert_eq!(get_piece_moves(&b, &gs, D4, WHITE, true).len(), 12);
+        b.set_square(D6, WHITE, PAWN);
+        assert_eq!(get_piece_moves(&b, &gs, D4, WHITE, true).len(), 11);
     }
 
     #[test]
     fn test_get_queen_moves() {
-        let mut b = new_empty();
+        let mut b = Board::new_empty();
         let gs = GameState::new();
 
-        set_square(&mut b, &pos("d4"), SQ_WH_Q);
-        assert_eq!(get_piece_moves(&b, &pos("d4"), &gs, true).len(), 14 + 13);
+        b.set_square(D4, WHITE, QUEEN);
+        assert_eq!(get_piece_moves(&b, &gs, D4, WHITE, true).len(), 14 + 13);
     }
 
     #[test]
@@ -582,54 +641,54 @@ mod tests {
         let mut gs = GameState::new();
 
         // King can move 1 square in any direction.
-        let mut b = new_empty();
-        set_square(&mut b, &pos("d4"), SQ_WH_K);
-        assert_eq!(get_piece_moves(&b, &pos("d4"), &gs, true).len(), 8);
-        set_square(&mut b, &pos("e5"), SQ_WH_P);
-        assert_eq!(get_piece_moves(&b, &pos("d4"), &gs, true).len(), 7);
+        let mut b = Board::new_empty();
+        b.set_square(D4, WHITE, KING);
+        assert_eq!(get_piece_moves(&b, &gs, D4, WHITE, true).len(), 8);
+        b.set_square(E5, WHITE, PAWN);
+        assert_eq!(get_piece_moves(&b, &gs, D4, WHITE, true).len(), 7);
 
         // If castling is available, other moves are possible: 5 moves + 2 castles.
-        let mut b = new_empty();
-        set_square(&mut b, &pos("e1"), SQ_WH_K);
-        set_square(&mut b, &pos("a1"), SQ_WH_R);
-        set_square(&mut b, &pos("h1"), SQ_WH_R);
-        assert_eq!(get_piece_moves(&b, &pos("e1"), &gs, true).len(), 5 + 2);
+        let mut b = Board::new_empty();
+        b.set_square(E1, WHITE, KING);
+        b.set_square(A1, WHITE, ROOK);
+        b.set_square(H1, WHITE, ROOK);
+        assert_eq!(get_piece_moves(&b, &gs, E1, WHITE, true).len(), 5 + 2);
 
         // Castling works as well for black.
-        gs.color = SQ_BL;
-        set_square(&mut b, &pos("e8"), SQ_BL_K);
-        set_square(&mut b, &pos("a8"), SQ_BL_R);
-        set_square(&mut b, &pos("h8"), SQ_BL_R);
-        assert_eq!(get_piece_moves(&b, &pos("e8"), &gs, true).len(), 5 + 2);
+        gs.color = BLACK;
+        b.set_square(E8, BLACK, KING);
+        b.set_square(A8, BLACK, ROOK);
+        b.set_square(H8, BLACK, ROOK);
+        assert_eq!(get_piece_moves(&b, &gs, E8, BLACK, true).len(), 5 + 2);
     }
 
     #[test]
     fn test_filter_illegal_moves() {
-        let mut b = new_empty();
+        let mut b = Board::new_empty();
         let mut gs = GameState::new();
 
         // Place white's king on first rank.
-        set_square(&mut b, &pos("e1"), SQ_WH_K);
+        b.set_square(E1, WHITE, KING);
         // Place black rook in second rank: king can only move left or right.
-        set_square(&mut b, &pos("h2"), SQ_BL_R);
+        b.set_square(H2, BLACK, ROOK);
         // No castling available.
         gs.castling = 0;
         // 5 moves in absolute but only 2 are legal.
-        let all_wh_moves = get_piece_moves(&b, &pos("e1"), &gs, true);
+        let all_wh_moves = get_piece_moves(&b, &gs, E1, WHITE, true);
         assert_eq!(all_wh_moves.len(), 2);
     }
 
     #[test]
     fn test_is_attacked() {
-        let mut b = new_empty();
+        let mut b = Board::new_empty();
         let gs = GameState::new();
 
         // Place a black rook in white pawn's file.
-        set_square(&mut b, &pos("d4"), SQ_WH_P);
-        set_square(&mut b, &pos("d6"), SQ_BL_R);
-        assert!(is_attacked(&b, &gs, &pos("d4")));
+        b.set_square(D4, WHITE, PAWN);
+        b.set_square(D6, BLACK, ROOK);
+        assert!(is_attacked(&b, &gs, D4));
         // Move the rook on another file, no more attack.
-        movement::apply_move_to_board(&mut b, &parse_move("d6e6"));
-        assert!(!is_attacked(&b, &gs, &pos("d4")));
+        Move::new(D6, E6).apply_to_board(&mut b);
+        assert!(!is_attacked(&b, &gs, D4));
     }
 }
