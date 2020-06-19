@@ -253,7 +253,7 @@ impl Board {
     }
 
     /// Debug only: count number of pieces on board.
-    pub fn num_pieces(&self) -> u8 {
+    pub(crate) fn num_pieces(&self) -> u8 {
         let cbb = self.combined();
         let mut count = 0;
         while cbb > 0 {
@@ -264,7 +264,7 @@ impl Board {
     }
 
     /// Debug only: write a text view of the board.
-    pub fn draw(&self, f: &mut dyn std::io::Write) {
+    pub(crate) fn draw(&self, f: &mut dyn std::io::Write) {
         let cbb = self.colors[WHITE] | self.colors[BLACK];
         for rank in (0..8).rev() {
             let mut rank_str = String::with_capacity(8);
