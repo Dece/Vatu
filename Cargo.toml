@@ -6,4 +6,3 @@ edition = "2018"
 
 [dependencies]
 clap = "2.33"
-dashmap = "3.11"

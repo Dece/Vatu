@@ -126,7 +126,7 @@ pub fn sq_to_string(square: Square) -> String {
 }
 
 /// Board representation with color/piece bitboards.
-#[derive(PartialEq)]
+#[derive(Clone, PartialEq)]
 pub struct Board {
     pub colors: [Bitboard; 2],
     pub pieces: [Bitboard; 6],

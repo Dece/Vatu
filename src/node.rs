@@ -1,5 +1,4 @@
 use std::fmt;
-use std::hash::{Hash, Hasher};
 
 use crate::board;
 use crate::movement::{self, Move};
@@ -7,7 +6,7 @@ use crate::rules;
 use crate::stats;
 
 /// Analysis node: a board along with the game state.
-#[derive(Clone)]
+#[derive(Clone, PartialEq)]
 pub struct Node {
     /// Board for this node.
     pub board: board::Board,
@@ -19,7 +18,7 @@ impl Node {
     /// Create a new node for an empty board and a new game state.
     pub fn new() -> Node {
         Node {
-            board: board::new_empty(),
+            board: board::Board::new_empty(),
             game_state: rules::GameState::new(),
         }
     }
@@ -53,7 +52,7 @@ impl fmt::Debug for Node {
 impl fmt::Display for Node {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let mut s = vec!();
-        board::draw(&self.board, &mut s);
+        self.board.draw(&mut s);
         let board_drawing = String::from_utf8_lossy(&s).to_string();
         write!(
             f,
@@ -61,21 +60,5 @@ impl fmt::Display for Node {
              * Game state:\n{}",
             board_drawing, self.game_state
         )
-    }
-}
-
-impl PartialEq for Node {
-    fn eq(&self, other: &Self) -> bool {
-        self.board.iter().zip(other.board.iter()).all(|(a, b)| a == b)
-        && self.game_state == other.game_state
-    }
-}
-
-impl Eq for Node {}
-
-impl Hash for Node {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        self.board.iter().for_each(|square| state.write_u8(*square));
-        self.game_state.hash(state);
     }
 }
