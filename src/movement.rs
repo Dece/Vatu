@@ -152,12 +152,12 @@ mod tests {
         assert!(b.is_empty(D4));
         assert_eq!(b.get_color_on(E6), WHITE);
         assert_eq!(b.get_piece_on(E6), KNIGHT);
-        assert_eq!(b.num_pieces(), 2);
+        assert_eq!(count_bits(b.combined()), 2);
         // Sack it with black knight
         Move::new(F4, E6).apply_to_board(&mut b);
         assert_eq!(b.get_color_on(E6), BLACK);
         assert_eq!(b.get_piece_on(E6), KNIGHT);
-        assert_eq!(b.num_pieces(), 1);
+        assert_eq!(count_bits(b.combined()), 1);
     }
 
     #[test]

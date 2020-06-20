@@ -62,7 +62,7 @@ impl BoardStats {
         self.reset();
         let color = game_state.color;
         // Compute mobility for all pieces.
-        self.mobility = get_player_moves(board, game_state, true).len() as i32;
+        self.mobility = get_player_moves(board, game_state, false).len() as i32;
         // Compute amount of each piece.
         for file in 0..8 {
             for rank in 0..8 {
@@ -172,8 +172,6 @@ mod tests {
             mobility: 20,
         };
         let mut stats = BoardStats::new_from(&b, &gs);
-        eprintln!("{}", stats.0);
-        eprintln!("{}", stats.1);
         assert!(stats.0 == stats.1);
         assert!(stats.0 == initial_stats);
 

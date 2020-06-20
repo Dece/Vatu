@@ -103,7 +103,7 @@ impl Analyzer {
 
         if self.debug {
             self.log(format!("Analyzing node:\n{}", &self.node));
-            let moves = self.node.get_player_moves(true);
+            let moves = self.node.get_player_legal_moves();
             self.log(format!("Legal moves: {}", Move::list_to_uci_string(&moves)));
             self.log(format!("Move time: {}", self.time_limit));
         }
@@ -119,7 +119,7 @@ impl Analyzer {
         } else {
             // If no best move could be found, checkmate is unavoidable; send the first legal move.
             self.log("Checkmate is unavoidable.".to_string());
-            let moves = rules::get_player_moves(&self.node.board, &self.node.game_state, true);
+            let moves = rules::get_player_moves(&self.node.board, &self.node.game_state, false);
             let m = if moves.len() > 0 { Some(moves[0].clone()) } else { None };
             self.report_best_move(m);
         }
@@ -185,7 +185,7 @@ impl Analyzer {
         }
 
         // Get negamax for playable moves.
-        let moves = node.get_player_moves(true);
+        let moves = node.get_player_legal_moves();
         let mut alpha = alpha;
         let mut best_score = MIN_F32;
         let mut best_move = None;

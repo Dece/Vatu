@@ -67,6 +67,8 @@ cp external/lichess-bot/config.yml.example /tmp/vatu-config/config.yml
 docker build -f res/docker/Dockerfile -t vatu .
 # Run with the config folder mounted at /config.
 docker run -v /tmp/vatu-config:/config -ti vatu
+# In the container, use the following command:
+python lichess-bot.py --config /config/config.yml
 ```
 
 
@@ -74,10 +76,11 @@ docker run -v /tmp/vatu-config:/config -ti vatu
 TODO
 ----
 
-- Support time constraints
-- Proper unmake mechanism instead of allocating boards like there is no tomorrow
-- Precompute some pieces moves, maybe
-- Transposition table that does not actually slows search down
-- Check Zobrist hashes for previous point
-- Actual bitboard
-- Multithreading (never)
+- [X] Support time constraints
+- [ ] Unmake mechanism instead of allocating nodes like there is no tomorrow
+- [X] Precompute some pieces moves, maybe (done for knights)
+- [ ] Transposition table that does not actually slows search down
+- [ ] Check Zobrist hashes for previous point
+- [X] Actual bitboard
+- [ ] Some kind of move ordering could be great
+- [ ] Multithreading (never)

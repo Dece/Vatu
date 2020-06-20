@@ -29,8 +29,8 @@ impl Node {
     }
 
     /// Return player moves from this node.
-    pub fn get_player_moves(&self, commit: bool) -> Vec<Move> {
-        rules::get_player_moves(&self.board, &self.game_state, commit)
+    pub fn get_player_legal_moves(&self) -> Vec<Move> {
+        rules::get_player_moves(&self.board, &self.game_state, false)
     }
 
     /// Compute stats for both players for this node.
