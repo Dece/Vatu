@@ -148,7 +148,7 @@ fn get_pawn_moves(
                 let diag = sq(f - 1, forward_r);
                 if !board.is_empty(diag) {
                     let diag_color = board.get_color_on(diag);
-                    if let Some(m) = move_if_enemy(color, square, diag_color, diag, true) {
+                    if let Some(m) = get_capture_move(color, square, diag_color, diag, true) {
                         if can_register(commit, board, game_state, &m) {
                             moves.push(m);
                         }
@@ -161,7 +161,7 @@ fn get_pawn_moves(
                 let diag = sq(f + 1, forward_r);
                 if !board.is_empty(diag) {
                     let diag_color = board.get_color_on(diag);
-                    if let Some(m) = move_if_enemy(color, square, diag_color, diag, true) {
+                    if let Some(m) = get_capture_move(color, square, diag_color, diag, true) {
                         if can_register(commit, board, game_state, &m) {
                             moves.push(m);
                         }
@@ -203,19 +203,11 @@ fn get_bishop_moves(
             }
             let ray_square = sq(ray_f, ray_r);
 
-            if board.is_empty(ray_square) {
-                let m = Move::new(square, ray_square);
-                if can_register(commit, board, game_state, &m) {
-                    moves.push(m);
-                }
-            } else {
-                let ray_color = board.get_color_on(ray_square);
-                if let Some(m) = move_if_enemy(color, square, ray_color, ray_square, false) {
-                    if can_register(commit, board, game_state, &m) {
-                        moves.push(m);
-                    }
-                }
-                views[dir] = false;
+            match get_move_type(board, game_state, square, ray_square, color, commit) {
+                MoveType::Simple(m) => { moves.push(m) }
+                MoveType::Capture(m) => { moves.push(m); views[dir] = false; }
+                MoveType::CantTakeFriend => { views[dir] = false; }
+                _ => {}
             }
         }
     }
@@ -242,18 +234,9 @@ fn get_knight_moves(
         }
         let ray_square = sq(ray_f, ray_r);
 
-        if board.is_empty(ray_square) {
-            let m = Move::new(square, ray_square);
-            if can_register(commit, board, game_state, &m) {
-                moves.push(m);
-            }
-        } else {
-            let ray_color = board.get_color_on(ray_square);
-            if let Some(m) = move_if_enemy(color, square, ray_color, ray_square, false) {
-                if can_register(commit, board, game_state, &m) {
-                    moves.push(m);
-                }
-            }
+        match get_move_type(board, game_state, square, ray_square, color, commit) {
+            MoveType::Simple(m) | MoveType::Capture(m) => moves.push(m),
+            _ => {}
         }
     }
     moves
@@ -287,19 +270,11 @@ fn get_rook_moves(
             }
             let ray_square = sq(ray_f, ray_r);
 
-            if board.is_empty(ray_square) {
-                let m = Move::new(square, ray_square);
-                if can_register(commit, board, game_state, &m) {
-                    moves.push(m);
-                }
-            } else {
-                let ray_color = board.get_color_on(ray_square);
-                if let Some(m) = move_if_enemy(color, square, ray_color, ray_square, false) {
-                    if can_register(commit, board, game_state, &m) {
-                        moves.push(m);
-                    }
-                }
-                views[dir] = false;  // Stop looking in that direction.
+            match get_move_type(board, game_state, square, ray_square, color, commit) {
+                MoveType::Simple(m) => { moves.push(m) }
+                MoveType::Capture(m) => { moves.push(m); views[dir] = false; }
+                MoveType::CantTakeFriend => { views[dir] = false; }
+                _ => {}
             }
         }
     }
@@ -340,18 +315,9 @@ fn get_king_moves(
         }
         let ray_square = sq(ray_f, ray_r);
 
-        if board.is_empty(ray_square) {
-            let m = Move::new(square, ray_square);
-            if can_register(commit, board, game_state, &m) {
-                moves.push(m);
-            }
-        } else {
-            let ray_color = board.get_color_on(ray_square);
-            if let Some(m) = move_if_enemy(color, square, ray_color, ray_square, false) {
-                if can_register(commit, board, game_state, &m) {
-                    moves.push(m);
-                }
-            }
+        match get_move_type(board, game_state, square, ray_square, color, commit) {
+            MoveType::Simple(m) | MoveType::Capture(m) => moves.push(m),
+            _ => {}
         }
     }
 
@@ -417,6 +383,47 @@ fn get_king_moves(
     moves
 }
 
+/// Accept or ignore a move from `square` to `ray_square`.
+fn get_move_type(
+    board: &Board,
+    game_state: &GameState,
+    square: Square,
+    ray_square: Square,
+    color: Color,
+    commit: bool
+) -> MoveType {
+    if board.is_empty(ray_square) {
+        let m = Move::new(square, ray_square);
+        if can_register(commit, board, game_state, &m) {
+            MoveType::Simple(m)
+        } else {
+            MoveType::CantRegister
+        }
+    } else {
+        let ray_color = board.get_color_on(ray_square);
+        if let Some(m) = get_capture_move(color, square, ray_color, ray_square, false) {
+            if can_register(commit, board, game_state, &m) {
+                MoveType::Capture(m)
+            } else {
+                MoveType::CantRegister
+            }
+        } else {
+            MoveType::CantTakeFriend
+        }
+    }
+}
+
+enum MoveType {
+    /// Move to an empty square.
+    Simple(Move),
+    /// Capture an enemy piece.
+    Capture(Move),
+    /// May be illegal, or should not be committed, e.g. to test rays.
+    CantRegister,
+    /// Can't capture a friend piece.
+    CantTakeFriend,
+}
+
 /// Return true if `commit` is false, or the move is not illegal,
 ///
 /// Committing a move means that it can be safely played afterwards.
@@ -429,7 +436,7 @@ fn can_register(commit: bool, board: &Board, game_state: &GameState, m: &Move) -
 }
 
 /// Return a move from `square1` to `square2` if colors are opposite.
-fn move_if_enemy(
+fn get_capture_move(
     color1: Color,
     square1: Square,
     color2: Color,
@@ -455,13 +462,13 @@ fn move_if_enemy(
 /// Check if a move is illegal.
 fn is_illegal(board: &Board, game_state: &GameState, m: &Move) -> bool {
     if let Some(mut king_square) = board.find_king(game_state.color) {
-        // Rule 1: a move is illegal if the king ends up in check.
+        let mut hypothetic_board = board.clone();
+        m.apply_to_board(&mut hypothetic_board);
+        // A move is illegal if the king ends up in check.
         // If king moves, use its new position.
         if m.source == king_square {
             king_square = m.dest
         }
-        let mut hypothetic_board = board.clone();
-        m.apply_to_board(&mut hypothetic_board);
         // Check if the move makes the player king in check.
         if is_attacked(&hypothetic_board, &game_state, king_square) {
             return true
