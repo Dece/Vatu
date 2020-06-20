@@ -178,37 +178,15 @@ fn get_bishop_moves(
     color: Color,
     pseudo_legal: bool,
 ) -> Vec<Move> {
-    let (f, r) = (sq_file(square), sq_rank(square));
-    let mut views = [true; 4];  // Store diagonals where a piece blocks commit.
-    let mut moves = Vec::with_capacity(8);
-    for dist in 1..=7 {
-        for (dir, offset) in [(1, -1), (1, 1), (-1, 1), (-1, -1)].iter().enumerate() {
-            if !views[dir] {
-                continue
-            }
-
-            // If this position is out of the board, stop looking in that direction.
-            let ray_f = f + offset.0 * dist;
-            if ray_f < POS_MIN || ray_f > POS_MAX {
-                views[dir] = false;
-                continue
-            }
-            let ray_r = r + offset.1 * dist;
-            if ray_r < POS_MIN || ray_r > POS_MAX {
-                views[dir] = false;
-                continue
-            }
-            let ray_square = sq(ray_f, ray_r);
-
-            match get_move_type(board, game_state, square, ray_square, color, pseudo_legal) {
-                MoveType::Simple(m) => { moves.push(m) }
-                MoveType::Capture(m) => { moves.push(m); views[dir] = false; }
-                MoveType::CantTakeFriend => { views[dir] = false; }
-                _ => {}
-            }
-        }
-    }
-    moves
+    get_moves_from_bb(
+        board,
+        game_state,
+        board.get_bishop_rays(square, color),
+        square,
+        color,
+        BISHOP,
+        pseudo_legal
+    )
 }
 
 fn get_knight_moves(
@@ -218,25 +196,15 @@ fn get_knight_moves(
     color: Color,
     pseudo_legal: bool,
 ) -> Vec<Move> {
-    let (f, r) = (sq_file(square), sq_rank(square));
-    let mut moves = Vec::with_capacity(8);
-    for offset in [(1, 2), (2, 1), (2, -1), (1, -2), (-1, -2), (-2, -1), (-2, 1), (-1, 2)].iter() {
-        let ray_f = f + offset.0;
-        if ray_f < POS_MIN || ray_f > POS_MAX {
-            continue
-        }
-        let ray_r = r + offset.1;
-        if ray_r < POS_MIN || ray_r > POS_MAX {
-            continue
-        }
-        let ray_square = sq(ray_f, ray_r);
-
-        match get_move_type(board, game_state, square, ray_square, color, pseudo_legal) {
-            MoveType::Simple(m) | MoveType::Capture(m) => moves.push(m),
-            _ => {}
-        }
-    }
-    moves
+    get_moves_from_bb(
+        board,
+        game_state,
+        board.get_knight_rays(square, color),
+        square,
+        color,
+        KNIGHT,
+        pseudo_legal
+    )
 }
 
 fn get_rook_moves(
@@ -246,36 +214,15 @@ fn get_rook_moves(
     color: Color,
     pseudo_legal: bool,
 ) -> Vec<Move> {
-    let (f, r) = (sq_file(square), sq_rank(square));
-    let mut moves = Vec::with_capacity(8);
-    let mut views = [true; 4];  // Store lines where a piece blocks commit.
-    for dist in 1..=7 {
-        for (dir, offset) in [(0, 1), (1, 0), (0, -1), (-1, 0)].iter().enumerate() {
-            if !views[dir] {
-                continue
-            }
-
-            let ray_f = f + offset.0 * dist;
-            if ray_f < POS_MIN || ray_f > POS_MAX {
-                views[dir] = false;
-                continue
-            }
-            let ray_r = r + offset.1 * dist;
-            if ray_r < POS_MIN || ray_r > POS_MAX {
-                views[dir] = false;
-                continue
-            }
-            let ray_square = sq(ray_f, ray_r);
-
-            match get_move_type(board, game_state, square, ray_square, color, pseudo_legal) {
-                MoveType::Simple(m) => { moves.push(m) }
-                MoveType::Capture(m) => { moves.push(m); views[dir] = false; }
-                MoveType::CantTakeFriend => { views[dir] = false; }
-                _ => {}
-            }
-        }
-    }
-    moves
+    get_moves_from_bb(
+        board,
+        game_state,
+        board.get_rook_rays(square, color),
+        square,
+        color,
+        ROOK,
+        pseudo_legal
+    )
 }
 
 fn get_queen_moves(
@@ -285,11 +232,15 @@ fn get_queen_moves(
     color: Color,
     pseudo_legal: bool,
 ) -> Vec<Move> {
-    let mut moves = Vec::with_capacity(16);
-    // Easy way to get queen moves, but may be a bit quicker if everything was rewritten here.
-    moves.append(&mut get_bishop_moves(board, game_state, square, color, pseudo_legal));
-    moves.append(&mut get_rook_moves(board, game_state, square, color, pseudo_legal));
-    moves
+    get_moves_from_bb(
+        board,
+        game_state,
+        board.get_queen_rays(square, color),
+        square,
+        color,
+        QUEEN,
+        pseudo_legal
+    )
 }
 
 fn get_king_moves(
@@ -299,24 +250,15 @@ fn get_king_moves(
     color: Color,
     pseudo_legal: bool,
 ) -> Vec<Move> {
-    let (f, r) = (sq_file(square), sq_rank(square));
-    let mut moves = Vec::with_capacity(8);
-    for offset in [(-1, 1), (0, 1), (1, 1), (-1, 0), (1, 0), (-1, -1), (0, -1), (1, -1)].iter() {
-        let ray_f = f + offset.0;
-        if ray_f < POS_MIN || ray_f > POS_MAX {
-            continue
-        }
-        let ray_r = r + offset.1;
-        if ray_r < POS_MIN || ray_r > POS_MAX {
-            continue
-        }
-        let ray_square = sq(ray_f, ray_r);
-
-        match get_move_type(board, game_state, square, ray_square, color, pseudo_legal) {
-            MoveType::Simple(m) | MoveType::Capture(m) => moves.push(m),
-            _ => {}
-        }
-    }
+    let mut moves = get_moves_from_bb(
+        board,
+        game_state,
+        board.get_king_rays(square, color),
+        square,
+        color,
+        KING,
+        pseudo_legal
+    );
 
     // Stop here for pseudo legal moves as castling is not considered along with them.
     if pseudo_legal {
@@ -338,6 +280,7 @@ fn get_king_moves(
         (7, CASTLING_BL_MASK)
     };
 
+    let r = sq_rank(square);
     // Check for castling if the king is on its castling rank (R1)
     // and is not in check (R4).
     if
@@ -380,56 +323,56 @@ fn get_king_moves(
     moves
 }
 
+/// Get moves from this ray bitboard.
+fn get_moves_from_bb(
+    board: &Board,
+    game_state: &GameState,
+    bitboard: Bitboard,
+    square: Square,
+    color: Color,
+    piece: Piece,
+    pseudo_legal: bool
+) -> Vec<Move> {
+    let mut moves = Vec::with_capacity(count_bits(bitboard).into());
+    for ray_square in 0..NUM_SQUARES {
+        if ray_square == square || bitboard & bit_pos(ray_square) == 0 {
+            continue
+        }
+        if let Some(mut m) = inspect_move(board, game_state, square, ray_square, pseudo_legal) {
+            // Automatic queen promotion for pawns moving to the opposite rank.
+            if
+                piece == PAWN
+                && (color == WHITE && sq_rank(ray_square) == RANK_8)
+                || (color == BLACK && sq_rank(ray_square) == RANK_1)
+            {
+                m.promotion = Some(QUEEN);
+            }
+            moves.push(m);
+        }
+    }
+    moves
+}
+
 /// Accept or ignore a move from `square` to `ray_square`.
-fn get_move_type(
+///
+/// This function checks that the move is legal, unless `pseudo_legal`
+/// is true. It assumes that `ray_square` is either empty or an enemy
+/// piece, but not a friend piece: they should have been filtered.
+///
+/// This function does not set promotions for pawns reaching last rank.
+fn inspect_move(
     board: &Board,
     game_state: &GameState,
     square: Square,
     ray_square: Square,
-    color: Color,
-    commit: bool
-) -> MoveType {
-    if board.is_empty(ray_square) {
-        let m = Move::new(square, ray_square);
-        if is_legal(commit, board, game_state, &m) {
-            MoveType::Simple(m)
-        } else {
-            MoveType::CantRegister
-        }
+    pseudo_legal: bool
+) -> Option<Move> {
+    let m = Move::new(square, ray_square);
+    if pseudo_legal || !is_illegal(board, game_state, &m) {
+        Some(m)
     } else {
-        let ray_color = board.get_color_on(ray_square);
-        if let Some(m) = get_capture_move(color, square, ray_color, ray_square, false) {
-            if is_legal(commit, board, game_state, &m) {
-                MoveType::Capture(m)
-            } else {
-                MoveType::CantRegister
-            }
-        } else {
-            MoveType::CantTakeFriend
-        }
+        None
     }
-}
-
-enum MoveType {
-    /// Move to an empty square.
-    Simple(Move),
-    /// Capture an enemy piece.
-    Capture(Move),
-    /// May be illegal, or should not be committed, e.g. to test rays.
-    CantRegister,
-    /// Can't capture a friend piece.
-    CantTakeFriend,
-}
-
-/// Return true if `pseudo_legal` is true, or the move is not illegal,
-///
-/// Committing a move means that it can be safely played afterwards.
-/// Sometimes it is not what is needed to accept a move in a collection
-/// of moves, e.g. when simply checking if some moves would make a
-/// previous move illegal.
-#[inline]
-fn is_legal(pseudo_legal: bool, board: &Board, game_state: &GameState, m: &Move) -> bool {
-    pseudo_legal || !is_illegal(board, game_state, m)
 }
 
 /// Return a move from `square1` to `square2` if colors are opposite.

@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
-"""Pre-compute knight ray bitboards for each square."""
+"""Pre-compute king ras bitboards for each square."""
 
 TEMPLATE = """\
-/// Pre-computed knight rays.
-const KNIGHT_RAYS: [Bitboard; 64] = [
+/// Pre-computed king rays.
+const KING_RAYS: [Bitboard; 64] = [
 {}
 ];
 """
 
-DIRS = [(1, 2), (2, 1), (2, -1), (1, -2), (-1, -2), (-2, -1), (-2, 1), (-1, 2)]
+DIRS = [(1, 0), (1, 1), (0, 1), (-1, 1), (-1, 0), (-1, -1), (0, -1), (1, -1)]
 
 def bit_pos(square):
     return 1 << square
