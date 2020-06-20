@@ -1,7 +1,7 @@
 //! Board statistics used for heuristics.
 
 use crate::board::*;
-use crate::rules::{GameState, get_player_moves};
+use crate::rules::{GameState, get_player_moves, POS_MIN, POS_MAX};
 
 /// Storage for board pieces stats.
 #[derive(Debug, Clone, PartialEq)]
@@ -78,73 +78,61 @@ impl BoardStats {
                     KING => self.num_kings += 1,
                     PAWN => {
                         self.num_pawns += 1;
-                        // FIXME redo pawn stats properly
-                        // let mut doubled = false;
-                        // let mut isolated = true;
-                        // let mut backward = true;
-                        // for r in 0..8 {
-                        //     // Check for doubled pawns.
-                        //     if !doubled {
-                        //         let other_color = board.get_color(sq(file, r));
-                        //         is_piece(get_square(board, &(pos_f, r)), color|SQ_P) && r != pos_r
-                        //         doubled = true;
-                        //     }
-                        //     // Check for isolated pawns.
-                        //     if
-                        //         isolated &&
-                        //         (
-                        //             // Check on the left file if not on a-file...
-                        //             (
-                        //                 pos_f > POS_MIN &&
-                        //                 is_piece(get_square(board, &(pos_f - 1, r)), color|SQ_P)
-                        //             ) ||
-                        //             // Check on the right file if not on h-file...
-                        //             (
-                        //                 pos_f < POS_MAX &&
-                        //                 is_piece(get_square(board, &(pos_f + 1, r)), color|SQ_P)
-                        //             )
-                        //         )
-                        //     {
-                        //         isolated = false;
-                        //     }
-                        //     // Check for backward pawns.
-                        //     if backward {
-                        //         if color == SQ_WH && r <= pos_r {
-                        //             if (
-                        //                 pos_f > POS_MIN &&
-                        //                 is_type(get_square(board, &(pos_f - 1, r)), SQ_P)
-                        //             ) || (
-                        //                 pos_f < POS_MAX &&
-                        //                 is_type(get_square(board, &(pos_f + 1, r)), SQ_P)
-                        //             ) {
-                        //                 backward = false;
-                        //             }
-                        //         } else if color == SQ_BL && r >= pos_r {
-                        //             if (
-                        //                 pos_f > POS_MIN &&
-                        //                 is_type(get_square(board, &(pos_f - 1, r)), SQ_P)
-                        //             ) || (
-                        //                 pos_f < POS_MAX &&
-                        //                 is_type(get_square(board, &(pos_f + 1, r)), SQ_P)
-                        //             ) {
-                        //                 backward = false;
-                        //             }
-                        //         }
-                        //     }
-                        // }
-                        // if doubled {
-                        //     self.num_doubled_pawns += 1;
-                        // }
-                        // if isolated {
-                        //     self.num_isolated_pawns += 1;
-                        // }
-                        // if backward {
-                        //     self.num_backward_pawns += 1;
-                        // }
+                        let pawn_bb = board.by_color_and_piece(color, PAWN);
+
+                        // Check for doubled pawns.
+                        let file_bb = FILES[file as usize];
+                        if (pawn_bb ^ bit_pos(square)) & file_bb != 0 {
+                            self.num_doubled_pawns += 1;
+                        }
+
+                        // Check for isolated and backward pawns.
+                        let (iso_on_prev_file, bw_on_prev_file) = if file > POS_MIN {
+                            self.find_isolated_and_backward(pawn_bb, square, color, file - 1)
+                        } else {
+                            (true, true)
+                        };
+                        let (iso_on_next_file, bw_on_next_file) = if file < POS_MAX {
+                            self.find_isolated_and_backward(pawn_bb, square, color, file + 1)
+                        } else {
+                            (true, true)
+                        };
+                        if iso_on_prev_file && iso_on_next_file {
+                            self.num_isolated_pawns += 1;
+                        }
+                        if bw_on_prev_file && bw_on_next_file {
+                            self.num_backward_pawns += 1;
+                        }
                     },
                     _ => {}
                 }
             }
+        }
+    }
+
+    /// Find isolated and backward pawns from `square` perspective.
+    ///
+    /// `bb` is the bitboard of `color`. `square` is only used to have
+    /// the reference rank. `file` is the file to inspect. To detect
+    /// isolated and backward pawns, `bb` should be the bitboard of
+    /// pawns of `color`.
+    fn find_isolated_and_backward(
+        &mut self,
+        bb: Bitboard,
+        square: Square,
+        color: Color,
+        file: i8
+    ) -> (bool, bool) {
+        if bb & FILES[file as usize] == 0 {
+            // If the piece is isolated for this file, it's backward as well.
+            (true, true)
+        } else {
+            let backward_file_bb = if color == WHITE {
+                before_on_file(file, sq_rank(square)) | bit_pos(sq(file, sq_rank(square)))
+            } else {
+                after_on_file(file, sq_rank(square)) | bit_pos(sq(file, sq_rank(square)))
+            };
+            (false, bb & backward_file_bb == 0)
         }
     }
 }

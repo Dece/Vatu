@@ -1,8 +1,5 @@
 //! Basic type definitions and functions.
 
-/// Bitboard for color or piece bits.
-pub type Bitboard = u64;
-
 /// Color type, used to index `Board.color`.
 pub type Color = usize;
 
@@ -137,6 +134,56 @@ pub fn sq_to_string(square: Square) -> String {
     String::from_utf8_lossy(&bytes).to_string()
 }
 
+/// Bitboard for color or piece bits.
+pub type Bitboard = u64;
+
+pub const FILES: [Bitboard; 8] = [
+    0b00000000_00000000_00000000_00000000_00000000_00000000_00000000_11111111,
+    0b00000000_00000000_00000000_00000000_00000000_00000000_11111111_00000000,
+    0b00000000_00000000_00000000_00000000_00000000_11111111_00000000_00000000,
+    0b00000000_00000000_00000000_00000000_11111111_00000000_00000000_00000000,
+    0b00000000_00000000_00000000_11111111_00000000_00000000_00000000_00000000,
+    0b00000000_00000000_11111111_00000000_00000000_00000000_00000000_00000000,
+    0b00000000_11111111_00000000_00000000_00000000_00000000_00000000_00000000,
+    0b11111111_00000000_00000000_00000000_00000000_00000000_00000000_00000000,
+];
+
+/// Get the bitboard of bits before the square ("left-most" bits).
+#[inline]
+const fn bits_before(file: i8, rank: i8) -> Bitboard {
+    (1 << sq(file, rank)) - 1
+}
+
+/// Get the bitboard of bits after the square ("right-most" bits).
+#[inline]
+const fn bits_after(file: i8, rank: i8) -> Bitboard {
+    !bits_before(file, rank) << 1
+}
+
+/// Get the bitboard of squares on lower ranks of the file.
+#[inline]
+pub const fn before_on_file(file: i8, rank: i8) -> Bitboard {
+    FILES[file as usize] & bits_before(file, rank)
+}
+
+/// Get the bitboard of squares on upper ranks of the file.
+#[inline]
+pub const fn after_on_file(file: i8, rank: i8) -> Bitboard {
+    FILES[file as usize] & bits_after(file, rank)
+}
+
+/// Get the bitboard of squares on lower ranks of the `square` file.
+#[inline]
+pub const fn before_on_square_file(square: Square) -> Bitboard {
+    before_on_file(sq_file(square), sq_rank(square))
+}
+
+/// Get the bitboard of squares on upper ranks of the `square` file.
+#[inline]
+pub const fn after_on_square_file(square: Square) -> Bitboard {
+    after_on_file(sq_file(square), sq_rank(square))
+}
+
 /// Board representation with color/piece bitboards.
 #[derive(Clone, PartialEq)]
 pub struct Board {
@@ -221,7 +268,7 @@ impl Board {
 
     /// Get the bitboard of a piece type for this color.
     #[inline]
-    pub fn by_color_piece(&self, color: Color, piece: Piece) -> Bitboard {
+    pub fn by_color_and_piece(&self, color: Color, piece: Piece) -> Bitboard {
         self.by_color(color) & self.by_piece(piece)
     }
 
@@ -333,11 +380,15 @@ impl Board {
 mod tests {
     use super::*;
 
+    // Color
+
     #[test]
     fn test_opposite() {
         assert_eq!(opposite(WHITE), BLACK);
         assert_eq!(opposite(BLACK), WHITE);
     }
+
+    // Square
 
     #[test]
     fn test_sq_from_string() {
@@ -355,6 +406,42 @@ mod tests {
         assert_eq!(sq_to_string(A8), "a8");
         assert_eq!(sq_to_string(H8), "h8");
     }
+
+    // Bitboard
+
+    #[test]
+    fn test_before_on_square_file() {
+        // Only should the 4 lowest files for readability.
+        assert_eq!(before_on_square_file(A1), 0b00000000_00000000_00000000_00000000);
+        assert_eq!(before_on_square_file(A2), 0b00000000_00000000_00000000_00000001);
+        assert_eq!(before_on_square_file(A4), 0b00000000_00000000_00000000_00000111);
+        assert_eq!(before_on_square_file(A8), 0b00000000_00000000_00000000_01111111);
+        assert_eq!(before_on_square_file(B1), 0b00000000_00000000_00000000_00000000);
+        assert_eq!(before_on_square_file(C1), 0b00000000_00000000_00000000_00000000);
+        assert_eq!(before_on_square_file(C4), 0b00000000_00000111_00000000_00000000);
+        // 4 highest files.
+        assert_eq!(before_on_square_file(H4), 0b00000111_00000000_00000000_00000000 << 32);
+        assert_eq!(before_on_square_file(H7), 0b00111111_00000000_00000000_00000000 << 32);
+        assert_eq!(before_on_square_file(H8), 0b01111111_00000000_00000000_00000000 << 32);
+    }
+
+    #[test]
+    fn test_after_on_file() {
+        assert_eq!(after_on_square_file(A1), 0b00000000_00000000_00000000_11111110);
+        assert_eq!(after_on_square_file(A2), 0b00000000_00000000_00000000_11111100);
+        assert_eq!(after_on_square_file(A4), 0b00000000_00000000_00000000_11110000);
+        assert_eq!(after_on_square_file(A8), 0b00000000_00000000_00000000_00000000);
+        assert_eq!(after_on_square_file(B1), 0b00000000_00000000_11111110_00000000);
+        assert_eq!(after_on_square_file(C1), 0b00000000_11111110_00000000_00000000);
+        assert_eq!(after_on_square_file(C4), 0b00000000_11110000_00000000_00000000);
+        assert_eq!(after_on_square_file(C8), 0b00000000_00000000_00000000_00000000);
+        // 4 highest files.
+        assert_eq!(after_on_square_file(H4), 0b11110000_00000000_00000000_00000000 << 32);
+        assert_eq!(after_on_square_file(H7), 0b10000000_00000000_00000000_00000000 << 32);
+        assert_eq!(after_on_square_file(H8), 0b00000000_00000000_00000000_00000000 << 32);
+    }
+
+    // Board
 
     #[test]
     fn test_new_from_fen() {
