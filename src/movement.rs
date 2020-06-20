@@ -64,9 +64,9 @@ impl Move {
         }
         // Else, check if the king or a rook moved to update castling options.
         else {
-            let color = board.get_color(self.dest);
+            let color = board.get_color_on(self.dest);
             if color == WHITE && game_state.castling & CASTLING_WH_MASK != 0 {
-                match board.get_piece(self.dest) {
+                match board.get_piece_on(self.dest) {
                     KING => {
                         if self.source == E1 {
                             game_state.castling &= !CASTLING_WH_MASK;
@@ -82,7 +82,7 @@ impl Move {
                     _ => {}
                 }
             } else if color == BLACK && game_state.castling & CASTLING_BL_MASK != 0 {
-                match board.get_piece(self.dest) {
+                match board.get_piece_on(self.dest) {
                     KING => {
                         if self.source == E8 {
                             game_state.castling &= !CASTLING_BL_MASK;
@@ -126,7 +126,7 @@ impl Move {
         } else {
             board.move_square(self.source, self.dest);
             if let Some(piece) = self.promotion {
-                let color = board.get_color(self.dest);
+                let color = board.get_color_on(self.dest);
                 board.set_square(self.dest, color, piece);
             }
         }
@@ -213,7 +213,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_apply_move_to_board() {
+    fn test_apply_to_board() {
         let mut b = Board::new_empty();
 
         // Put 2 enemy knights on board.
@@ -222,18 +222,18 @@ mod tests {
         // Move white knight in a position attacked by black knight.
         Move::new(D4, E6).apply_to_board(&mut b);
         assert!(b.is_empty(D4));
-        assert_eq!(b.get_color(E6), WHITE);
-        assert_eq!(b.get_piece(E6), KNIGHT);
+        assert_eq!(b.get_color_on(E6), WHITE);
+        assert_eq!(b.get_piece_on(E6), KNIGHT);
         assert_eq!(b.num_pieces(), 2);
         // Sack it with black knight
         Move::new(F4, E6).apply_to_board(&mut b);
-        assert_eq!(b.get_color(E6), BLACK);
-        assert_eq!(b.get_piece(E6), KNIGHT);
+        assert_eq!(b.get_color_on(E6), BLACK);
+        assert_eq!(b.get_piece_on(E6), KNIGHT);
         assert_eq!(b.num_pieces(), 1);
     }
 
     #[test]
-    fn test_apply_move_to_castling() {
+    fn test_apply_to_castling() {
         let mut b = Board::new();
         let mut gs = GameState::new();
         assert_eq!(gs.castling, CASTLING_MASK);
@@ -251,19 +251,19 @@ mod tests {
         b.clear_square(G8);
         // White queen-side castling.
         Move::new(E1, C1).apply_to(&mut b, &mut gs);
-        assert_eq!(b.get_color(C1), WHITE);
-        assert_eq!(b.get_piece(C1), KING);
-        assert_eq!(b.get_color(D1), WHITE);
-        assert_eq!(b.get_piece(D1), ROOK);
+        assert_eq!(b.get_color_on(C1), WHITE);
+        assert_eq!(b.get_piece_on(C1), KING);
+        assert_eq!(b.get_color_on(D1), WHITE);
+        assert_eq!(b.get_piece_on(D1), ROOK);
         assert!(b.is_empty(A1));
         assert!(b.is_empty(E1));
         assert_eq!(gs.castling, CASTLING_BL_MASK);
         // Black king-side castling.
         Move::new(E8, G8).apply_to(&mut b, &mut gs);
-        assert_eq!(b.get_color(G1), BLACK);
-        assert_eq!(b.get_piece(G1), KING);
-        assert_eq!(b.get_color(F1), BLACK);
-        assert_eq!(b.get_piece(F1), ROOK);
+        assert_eq!(b.get_color_on(G8), BLACK);
+        assert_eq!(b.get_piece_on(G8), KING);
+        assert_eq!(b.get_color_on(F8), BLACK);
+        assert_eq!(b.get_piece_on(F8), ROOK);
         assert!(b.is_empty(H8));
         assert!(b.is_empty(E8));
         // At the end, no more castling options for both sides.

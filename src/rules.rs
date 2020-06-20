@@ -5,8 +5,8 @@ use crate::castling::*;
 use crate::fen;
 use crate::movement::Move;
 
-const POS_MIN: i8 = 0;
-const POS_MAX: i8 = 7;
+pub const POS_MIN: i8 = 0;
+pub const POS_MAX: i8 = 7;
 
 /// Characteristics of the state of a game.
 ///
@@ -74,7 +74,7 @@ pub fn get_player_moves(
             if board.is_empty(square) {
                 continue
             }
-            if board.get_color(square) == game_state.color {
+            if board.get_color_on(square) == game_state.color {
                 moves.append(
                     &mut get_piece_moves(board, game_state, square, game_state.color, commit)
                 );
@@ -97,7 +97,7 @@ pub fn get_piece_moves(
     color: Color,
     commit: bool,
 ) -> Vec<Move> {
-    match board.get_piece(square) {
+    match board.get_piece_on(square) {
         PAWN => get_pawn_moves(board, game_state, square, color, commit),
         BISHOP => get_bishop_moves(board, game_state, square, color, commit),
         KNIGHT => get_knight_moves(board, game_state, square, color, commit),
@@ -147,7 +147,7 @@ fn get_pawn_moves(
             if f - 1 >= POS_MIN {
                 let diag = sq(f - 1, forward_r);
                 if !board.is_empty(diag) {
-                    let diag_color = board.get_color(diag);
+                    let diag_color = board.get_color_on(diag);
                     if let Some(m) = move_if_enemy(color, square, diag_color, diag, true) {
                         if can_register(commit, board, game_state, &m) {
                             moves.push(m);
@@ -160,7 +160,7 @@ fn get_pawn_moves(
             if f + 1 <= POS_MAX {
                 let diag = sq(f + 1, forward_r);
                 if !board.is_empty(diag) {
-                    let diag_color = board.get_color(diag);
+                    let diag_color = board.get_color_on(diag);
                     if let Some(m) = move_if_enemy(color, square, diag_color, diag, true) {
                         if can_register(commit, board, game_state, &m) {
                             moves.push(m);
@@ -192,12 +192,12 @@ fn get_bishop_moves(
 
             // If this position is out of the board, stop looking in that direction.
             let ray_f = f + offset.0 * dist;
-            if ray_f <= POS_MIN || ray_f >= POS_MAX {
+            if ray_f < POS_MIN || ray_f > POS_MAX {
                 views[dir] = false;
                 continue
             }
             let ray_r = r + offset.1 * dist;
-            if ray_r <= POS_MIN || ray_r >= POS_MAX {
+            if ray_r < POS_MIN || ray_r > POS_MAX {
                 views[dir] = false;
                 continue
             }
@@ -209,7 +209,7 @@ fn get_bishop_moves(
                     moves.push(m);
                 }
             } else {
-                let ray_color = board.get_color(ray_square);
+                let ray_color = board.get_color_on(ray_square);
                 if let Some(m) = move_if_enemy(color, square, ray_color, ray_square, false) {
                     if can_register(commit, board, game_state, &m) {
                         moves.push(m);
@@ -233,11 +233,11 @@ fn get_knight_moves(
     let mut moves = Vec::with_capacity(8);
     for offset in [(1, 2), (2, 1), (2, -1), (1, -2), (-1, -2), (-2, -1), (-2, 1), (-1, 2)].iter() {
         let ray_f = f + offset.0;
-        if ray_f <= POS_MIN || ray_f >= POS_MAX {
+        if ray_f < POS_MIN || ray_f > POS_MAX {
             continue
         }
         let ray_r = r + offset.1;
-        if ray_r <= POS_MIN || ray_r >= POS_MAX {
+        if ray_r < POS_MIN || ray_r > POS_MAX {
             continue
         }
         let ray_square = sq(ray_f, ray_r);
@@ -248,7 +248,7 @@ fn get_knight_moves(
                 moves.push(m);
             }
         } else {
-            let ray_color = board.get_color(ray_square);
+            let ray_color = board.get_color_on(ray_square);
             if let Some(m) = move_if_enemy(color, square, ray_color, ray_square, false) {
                 if can_register(commit, board, game_state, &m) {
                     moves.push(m);
@@ -276,12 +276,12 @@ fn get_rook_moves(
             }
 
             let ray_f = f + offset.0 * dist;
-            if ray_f <= POS_MIN || ray_f >= POS_MAX {
+            if ray_f < POS_MIN || ray_f > POS_MAX {
                 views[dir] = false;
                 continue
             }
             let ray_r = r + offset.1 * dist;
-            if ray_r <= POS_MIN || ray_r >= POS_MAX {
+            if ray_r < POS_MIN || ray_r > POS_MAX {
                 views[dir] = false;
                 continue
             }
@@ -293,7 +293,7 @@ fn get_rook_moves(
                     moves.push(m);
                 }
             } else {
-                let ray_color = board.get_color(ray_square);
+                let ray_color = board.get_color_on(ray_square);
                 if let Some(m) = move_if_enemy(color, square, ray_color, ray_square, false) {
                     if can_register(commit, board, game_state, &m) {
                         moves.push(m);
@@ -331,11 +331,11 @@ fn get_king_moves(
     let mut moves = Vec::with_capacity(8);
     for offset in [(-1, 1), (0, 1), (1, 1), (-1, 0), (1, 0), (-1, -1), (0, -1), (1, -1)].iter() {
         let ray_f = f + offset.0;
-        if ray_f <= POS_MIN || ray_f >= POS_MAX {
+        if ray_f < POS_MIN || ray_f > POS_MAX {
             continue
         }
         let ray_r = r + offset.1;
-        if ray_r <= POS_MIN || ray_r >= POS_MAX {
+        if ray_r < POS_MIN || ray_r > POS_MAX {
             continue
         }
         let ray_square = sq(ray_f, ray_r);
@@ -346,7 +346,7 @@ fn get_king_moves(
                 moves.push(m);
             }
         } else {
-            let ray_color = board.get_color(ray_square);
+            let ray_color = board.get_color_on(ray_square);
             if let Some(m) = move_if_enemy(color, square, ray_color, ray_square, false) {
                 if can_register(commit, board, game_state, &m) {
                     moves.push(m);

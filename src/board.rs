@@ -150,16 +150,16 @@ impl Board {
     pub const fn new() -> Board {
         Board {
             colors: [
-                0b11000000_11000000_11000000_11000000_11000000_11000000_11000000_11000000,
-                0b00000011_00000011_00000011_00000011_00000011_00000011_00000011_00000011,
+                0b00000011_00000011_00000011_00000011_00000011_00000011_00000011_00000011,  // W
+                0b11000000_11000000_11000000_11000000_11000000_11000000_11000000_11000000,  // B
             ],
             pieces: [
-                0b01000010_01000010_01000010_01000010_01000010_01000010_01000010_01000010,
-                0b00000000_00000000_10000001_00000000_00000000_10000001_00000000_00000000,
-                0b00000000_10000001_00000000_00000000_00000000_00000000_10000001_00000000,
-                0b10000001_00000000_00000000_00000000_00000000_00000000_00000000_10000001,
-                0b00000000_00000000_00000000_10000001_00000000_00000000_00000000_00000000,
-                0b00000000_00000000_00000000_00000000_10000001_00000000_00000000_00000000,
+                0b01000010_01000010_01000010_01000010_01000010_01000010_01000010_01000010,  // P
+                0b00000000_00000000_10000001_00000000_00000000_10000001_00000000_00000000,  // B
+                0b00000000_10000001_00000000_00000000_00000000_00000000_10000001_00000000,  // N
+                0b10000001_00000000_00000000_00000000_00000000_00000000_00000000_10000001,  // R
+                0b00000000_00000000_00000000_00000000_10000001_00000000_00000000_00000000,  // Q
+                0b00000000_00000000_00000000_10000001_00000000_00000000_00000000_00000000,  // K
             ]
         }
     }
@@ -179,18 +179,18 @@ impl Board {
         let mut r = 7;
         for c in fen.chars() {
             match c {
-                'r' => { board.set_square(f * 8 + r, BLACK, ROOK); f += 1 }
-                'n' => { board.set_square(f * 8 + r, BLACK, KNIGHT); f += 1 }
-                'b' => { board.set_square(f * 8 + r, BLACK, BISHOP); f += 1 }
-                'q' => { board.set_square(f * 8 + r, BLACK, QUEEN); f += 1 }
-                'k' => { board.set_square(f * 8 + r, BLACK, KING); f += 1 }
-                'p' => { board.set_square(f * 8 + r, BLACK, PAWN); f += 1 }
-                'R' => { board.set_square(f * 8 + r, WHITE, ROOK); f += 1 }
-                'N' => { board.set_square(f * 8 + r, WHITE, KNIGHT); f += 1 }
-                'B' => { board.set_square(f * 8 + r, WHITE, BISHOP); f += 1 }
-                'Q' => { board.set_square(f * 8 + r, WHITE, QUEEN); f += 1 }
-                'K' => { board.set_square(f * 8 + r, WHITE, KING); f += 1 }
-                'P' => { board.set_square(f * 8 + r, WHITE, PAWN); f += 1 }
+                'r' => { board.set_square(sq(f, r), BLACK, ROOK); f += 1 }
+                'n' => { board.set_square(sq(f, r), BLACK, KNIGHT); f += 1 }
+                'b' => { board.set_square(sq(f, r), BLACK, BISHOP); f += 1 }
+                'q' => { board.set_square(sq(f, r), BLACK, QUEEN); f += 1 }
+                'k' => { board.set_square(sq(f, r), BLACK, KING); f += 1 }
+                'p' => { board.set_square(sq(f, r), BLACK, PAWN); f += 1 }
+                'R' => { board.set_square(sq(f, r), WHITE, ROOK); f += 1 }
+                'N' => { board.set_square(sq(f, r), WHITE, KNIGHT); f += 1 }
+                'B' => { board.set_square(sq(f, r), WHITE, BISHOP); f += 1 }
+                'Q' => { board.set_square(sq(f, r), WHITE, QUEEN); f += 1 }
+                'K' => { board.set_square(sq(f, r), WHITE, KING); f += 1 }
+                'P' => { board.set_square(sq(f, r), WHITE, PAWN); f += 1 }
                 '/' => { f = 0; r -= 1; }
                 d if d.is_digit(10) => { f += d.to_digit(10).unwrap() as i8 }
                 _ => break,
@@ -207,28 +207,46 @@ impl Board {
         self.colors[WHITE] | self.colors[BLACK]
     }
 
+    /// Get the bitboard of a color.
+    #[inline]
+    pub fn by_color(&self, color: Color) -> Bitboard {
+        self.colors[color]
+    }
+
+    /// Get the bitboard of a piece type.
+    #[inline]
+    pub fn by_piece(&self, piece: Piece) -> Bitboard {
+        self.pieces[piece]
+    }
+
+    /// Get the bitboard of a piece type for this color.
+    #[inline]
+    pub fn by_color_piece(&self, color: Color, piece: Piece) -> Bitboard {
+        self.by_color(color) & self.by_piece(piece)
+    }
+
     /// True if this square is empty.
     pub fn is_empty(&self, square: Square) -> bool {
         self.combined() & bit_pos(square) == 0
     }
 
     /// Get color type at position. It must hold a piece!
-    pub fn get_color(&self, square: Square) -> Color {
+    pub fn get_color_on(&self, square: Square) -> Color {
         let bp = bit_pos(square);
-        if (self.colors[WHITE] & bp) == 1 { WHITE }
-        else if (self.pieces[BLACK] & bp) == 1 { BLACK }
+        if (self.colors[WHITE] & bp) != 0 { WHITE }
+        else if (self.colors[BLACK] & bp) != 0 { BLACK }
         else { panic!("Empty square.") }
     }
 
     /// Get piece type at position. It must hold a piece!
-    pub fn get_piece(&self, square: Square) -> Piece {
+    pub fn get_piece_on(&self, square: Square) -> Piece {
         let bp = bit_pos(square);
-        if (self.pieces[PAWN] & bp) == 1 { PAWN }
-        else if (self.pieces[BISHOP] & bp) == 1 { BISHOP }
-        else if (self.pieces[KNIGHT] & bp) == 1 { KNIGHT }
-        else if (self.pieces[ROOK] & bp) == 1 { ROOK }
-        else if (self.pieces[QUEEN] & bp) == 1 { QUEEN }
-        else if (self.pieces[KING] & bp) == 1 { KING }
+        if (self.pieces[PAWN] & bp) != 0 { PAWN }
+        else if (self.pieces[BISHOP] & bp) != 0 { BISHOP }
+        else if (self.pieces[KNIGHT] & bp) != 0 { KNIGHT }
+        else if (self.pieces[ROOK] & bp) != 0 { ROOK }
+        else if (self.pieces[QUEEN] & bp) != 0 { QUEEN }
+        else if (self.pieces[KING] & bp) != 0 { KING }
         else { panic!("Empty square.") }
     }
 
@@ -236,6 +254,7 @@ impl Board {
     #[inline]
     pub fn set_square(&mut self, square: Square, color: Color, piece: Piece) {
         self.colors[color] |= bit_pos(square);
+        self.colors[opposite(color)] &= !bit_pos(square);
         self.pieces[piece] |= bit_pos(square);
     }
 
@@ -249,7 +268,7 @@ impl Board {
     /// Move a piece from a position to another, clearing initial position.
     #[inline]
     pub fn move_square(&mut self, source: Square, dest: Square) {
-        self.set_square(dest, self.get_color(source), self.get_piece(source));
+        self.set_square(dest, self.get_color_on(source), self.get_piece_on(source));
         self.clear_square(source);
     }
 
@@ -257,7 +276,7 @@ impl Board {
     pub fn find_king(&self, color: Color) -> Option<Square> {
         let king_bb = self.colors[color] & self.pieces[KING];
         for square in 0..64 {
-            if king_bb & bit_pos(square) == 1 {
+            if king_bb & bit_pos(square) != 0 {
                 return Some(square)
             }
         }
@@ -278,16 +297,16 @@ impl Board {
 
     /// Debug only: write a text view of the board.
     pub(crate) fn draw(&self, f: &mut dyn std::io::Write) {
-        let cbb = self.colors[WHITE] | self.colors[BLACK];
+        let cbb = self.combined();
         for rank in (0..8).rev() {
             let mut rank_str = String::with_capacity(8);
             for file in 0..8 {
-                let square = file * 8 + rank;
+                let square = sq(file, rank);
                 let bp = bit_pos(square);
                 let piece_char = if cbb & bp == 0 {
                     '.'
                 } else {
-                    let (color, piece) = (self.get_color(square), self.get_piece(square));
+                    let (color, piece) = (self.get_color_on(square), self.get_piece_on(square));
                     let mut piece_char = match piece {
                         PAWN => 'p',
                         BISHOP => 'b',
@@ -347,27 +366,27 @@ mod tests {
     #[test]
     fn test_get_color() {
         let b = Board::new();
-        assert_eq!(b.get_color(A1), WHITE);
-        assert_eq!(b.get_color(A2), WHITE);
-        assert_eq!(b.get_color(A7), BLACK);
-        assert_eq!(b.get_color(A8), BLACK);
-        assert_eq!(b.get_color(D1), WHITE);
-        assert_eq!(b.get_color(D8), BLACK);
-        assert_eq!(b.get_color(E1), WHITE);
-        assert_eq!(b.get_color(E8), BLACK);
+        assert_eq!(b.get_color_on(A1), WHITE);
+        assert_eq!(b.get_color_on(A2), WHITE);
+        assert_eq!(b.get_color_on(A7), BLACK);
+        assert_eq!(b.get_color_on(A8), BLACK);
+        assert_eq!(b.get_color_on(D1), WHITE);
+        assert_eq!(b.get_color_on(D8), BLACK);
+        assert_eq!(b.get_color_on(E1), WHITE);
+        assert_eq!(b.get_color_on(E8), BLACK);
     }
 
     #[test]
     fn test_get_piece() {
         let b = Board::new();
-        assert_eq!(b.get_piece(A1), ROOK);
-        assert_eq!(b.get_piece(A2), PAWN);
-        assert_eq!(b.get_piece(A7), PAWN);
-        assert_eq!(b.get_piece(A8), ROOK);
-        assert_eq!(b.get_piece(D1), QUEEN);
-        assert_eq!(b.get_piece(D8), QUEEN);
-        assert_eq!(b.get_piece(E1), KING);
-        assert_eq!(b.get_piece(E8), KING);
+        assert_eq!(b.get_piece_on(A1), ROOK);
+        assert_eq!(b.get_piece_on(A2), PAWN);
+        assert_eq!(b.get_piece_on(A7), PAWN);
+        assert_eq!(b.get_piece_on(A8), ROOK);
+        assert_eq!(b.get_piece_on(D1), QUEEN);
+        assert_eq!(b.get_piece_on(D8), QUEEN);
+        assert_eq!(b.get_piece_on(E1), KING);
+        assert_eq!(b.get_piece_on(E8), KING);
     }
 
     #[test]

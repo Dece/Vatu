@@ -67,10 +67,10 @@ impl BoardStats {
         for file in 0..8 {
             for rank in 0..8 {
                 let square = sq(file, rank);
-                if board.is_empty(square) || board.get_color(square) != color {
+                if board.is_empty(square) || board.get_color_on(square) != color {
                     continue
                 }
-                match board.get_piece(square) {
+                match board.get_piece_on(square) {
                     ROOK => self.num_rooks += 1,
                     KNIGHT => self.num_knights += 1,
                     BISHOP => self.num_bishops += 1,
