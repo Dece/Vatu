@@ -43,11 +43,7 @@ impl std::fmt::Display for GameState {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         write!(
             f,
-            "- color: {}\n\
-             - castling: {:04b}\n\
-             - en_passant: {}\n\
-             - halfmove: {}\n\
-             - fullmove: {}",
+            "[color: {}, castling: {:04b}, en_passant: {}, halfmove: {}, fullmove: {}]",
             color_to_string(self.color), self.castling,
             fen::en_passant_to_string(self.en_passant),
             self.halfmove, self.fullmove

@@ -6,9 +6,6 @@ use crate::board::*;
 use crate::castling::*;
 use crate::rules::GameState;
 
-const START_WH_K_POS: Square = E1;
-const START_BL_K_POS: Square = E8;
-
 /// A movement, with before/after positions and optional promotion.
 #[derive(Clone, PartialEq)]
 pub struct Move {
@@ -39,119 +36,50 @@ impl Move {
 
     /// Apply this move to `board` and `game_state`.
     pub fn apply_to(&self, board: &mut Board, game_state: &mut GameState) {
-        // If a rook is taken, remove its castling option. Needs to be checked before we update
-        // board. Note that we only check for a piece going to rook's initial position: it means
-        // the rook either moved previously, or it has been taken.
-        match self.source {
-            A1 => { game_state.castling &= !CASTLING_WH_Q; }
-            H1 => { game_state.castling &= !CASTLING_WH_K; }
-            A8 => { game_state.castling &= !CASTLING_BL_Q; }
-            H8 => { game_state.castling &= !CASTLING_BL_K; }
-            _ => {}
-        }
-
+        // If a king moves, remove it from castling options.
+        if self.source == E1 { game_state.castling &= !CASTLING_WH_MASK; }
+        else if self.source == E8 { game_state.castling &= !CASTLING_BL_MASK; }
+        // Same for rooks.
+        if self.source == A1 || self.dest == A1 { game_state.castling &= !CASTLING_WH_Q; }
+        else if self.source == H1 || self.dest == H1 { game_state.castling &= !CASTLING_WH_K; }
+        else if self.source == A8 || self.dest == A8 { game_state.castling &= !CASTLING_BL_Q; }
+        else if self.source == H8 || self.dest == H8 { game_state.castling &= !CASTLING_BL_K; }
         // Update board and game state.
         self.apply_to_board(board);
         game_state.color = opposite(game_state.color);
-
-        // If the move is a castle, remove it from castling options.
-        if let Some(castle) = self.get_castle() {
-            match castle {
-                CASTLING_WH_K | CASTLING_WH_Q => game_state.castling &= !CASTLING_WH_MASK,
-                CASTLING_BL_K | CASTLING_BL_Q => game_state.castling &= !CASTLING_BL_MASK,
-                _ => {}
-            };
-        }
-        // Else, check if the king or a rook moved to update castling options.
-        else {
-            let color = board.get_color_on(self.dest);
-            if color == WHITE && game_state.castling & CASTLING_WH_MASK != 0 {
-                match board.get_piece_on(self.dest) {
-                    KING => {
-                        if self.source == E1 {
-                            game_state.castling &= !CASTLING_WH_MASK;
-                        }
-                    }
-                    ROOK => {
-                        if self.source == A1 {
-                            game_state.castling &= !CASTLING_WH_Q;
-                        } else if self.source == H1 {
-                            game_state.castling &= !CASTLING_WH_K;
-                        }
-                    }
-                    _ => {}
-                }
-            } else if color == BLACK && game_state.castling & CASTLING_BL_MASK != 0 {
-                match board.get_piece_on(self.dest) {
-                    KING => {
-                        if self.source == E8 {
-                            game_state.castling &= !CASTLING_BL_MASK;
-                        }
-                    }
-                    ROOK => {
-                        if self.source == A8 {
-                            game_state.castling &= !CASTLING_BL_Q;
-                        } else if self.source == H8 {
-                            game_state.castling &= !CASTLING_BL_K;
-                        }
-                    }
-                    _ => {}
-                }
-            }
-        }
     }
 
     /// Apply the move into `board`.
     pub fn apply_to_board(&self, board: &mut Board) {
-        if let Some(castle) = self.get_castle() {
-            match castle {
-                CASTLING_WH_K => {
-                    board.move_square(START_WH_K_POS, G1);
-                    board.move_square(H1, F1);
+        let piece = board.get_piece_on(self.source);
+        // If a king is castling, apply special move.
+        if piece == KING {
+            if let Some(castle) = self.get_castle() {
+                match castle {
+                    CASTLING_WH_K => { board.move_square(E1, G1); board.move_square(H1, F1); }
+                    CASTLING_WH_Q => { board.move_square(E1, C1); board.move_square(A1, D1); }
+                    CASTLING_BL_K => { board.move_square(E8, G8); board.move_square(H8, F8); }
+                    CASTLING_BL_Q => { board.move_square(E8, C8); board.move_square(A8, D8); }
+                    _ => { panic!("Invalid castle.") }
                 }
-                CASTLING_WH_Q => {
-                    board.move_square(START_WH_K_POS, C1);
-                    board.move_square(A1, D1);
-                }
-                CASTLING_BL_K => {
-                    board.move_square(START_BL_K_POS, G8);
-                    board.move_square(H8, F8);
-                }
-                CASTLING_BL_Q => {
-                    board.move_square(START_BL_K_POS, C8);
-                    board.move_square(A8, D8);
-                }
-                _ => {}
+                return
             }
-        } else {
-            board.move_square(self.source, self.dest);
-            if let Some(piece) = self.promotion {
-                let color = board.get_color_on(self.dest);
-                board.set_square(self.dest, color, piece);
-            }
+        }
+        board.move_square(self.source, self.dest);
+        if let Some(piece) = self.promotion {
+            let color = board.get_color_on(self.dest);
+            board.set_square(self.dest, color, piece);
         }
     }
 
     /// Get the corresponding castling flag for this move.
-    pub fn get_castle(&self) -> Option<u8> {
-        if self.source == E1 {
-            if self.dest == C1 {
-                Some(CASTLING_WH_Q)
-            } else if self.dest == G1 {
-                Some(CASTLING_WH_K)
-            } else {
-                None
-            }
-        } else if self.source == E8 {
-            if self.dest == C8 {
-                Some(CASTLING_BL_Q)
-            } else if self.dest == G8 {
-                Some(CASTLING_BL_K)
-            } else {
-                None
-            }
-        } else {
-            None
+    pub fn get_castle(&self) -> Option<Castle> {
+        match (self.source, self.dest) {
+            (E1, C1) => Some(CASTLING_WH_Q),
+            (E1, G1) => Some(CASTLING_WH_K),
+            (E8, C8) => Some(CASTLING_BL_Q),
+            (E8, G8) => Some(CASTLING_BL_K),
+            _ => None,
         }
     }
 

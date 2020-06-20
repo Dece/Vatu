@@ -54,11 +54,6 @@ impl fmt::Display for Node {
         let mut s = vec!();
         self.board.draw(&mut s);
         let board_drawing = String::from_utf8_lossy(&s).to_string();
-        write!(
-            f,
-            "* Board:\n{}\n\
-             * Game state:\n{}",
-            board_drawing, self.game_state
-        )
+        write!(f, "* Board:\n{}\nGame state: {}", board_drawing, self.game_state)
     }
 }
