@@ -7,6 +7,7 @@ pub mod engine;
 pub mod fen;
 pub mod movement;
 pub mod node;
+pub mod precomputed;
 pub mod rules;
 pub mod stats;
 pub mod uci;

@@ -3,7 +3,7 @@
 
 TEMPLATE = """\
 /// Pre-computed knight rays.
-const KNIGHT_RAYS: [Bitboard; 64] = [
+pub const KNIGHT_RAYS: [Bitboard; 64] = [
 {}
 ];
 """

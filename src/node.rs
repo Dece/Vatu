@@ -52,7 +52,7 @@ impl fmt::Debug for Node {
 impl fmt::Display for Node {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let mut s = vec!();
-        self.board.draw(&mut s);
+        self.board.draw_to(&mut s);
         let board_drawing = String::from_utf8_lossy(&s).to_string();
         write!(f, "* Board:\n{}\nGame state: {}", board_drawing, self.game_state)
     }

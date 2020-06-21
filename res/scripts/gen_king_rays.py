@@ -3,7 +3,7 @@
 
 TEMPLATE = """\
 /// Pre-computed king rays.
-const KING_RAYS: [Bitboard; 64] = [
+pub const KING_RAYS: [Bitboard; 64] = [
 {}
 ];
 """

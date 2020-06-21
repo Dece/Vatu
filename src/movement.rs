@@ -167,16 +167,16 @@ mod tests {
         assert_eq!(gs.castling, CASTLING_MASK);
 
         // On a starting board, start by making place for all castles.
-        b.clear_square(B1);
-        b.clear_square(C1);
-        b.clear_square(D1);
-        b.clear_square(F1);
-        b.clear_square(G1);
-        b.clear_square(B8);
-        b.clear_square(C8);
-        b.clear_square(D8);
-        b.clear_square(F8);
-        b.clear_square(G8);
+        b.clear_square(B1, WHITE, KNIGHT);
+        b.clear_square(C1, WHITE, BISHOP);
+        b.clear_square(D1, WHITE, QUEEN);
+        b.clear_square(F1, WHITE, BISHOP);
+        b.clear_square(G1, WHITE, KNIGHT);
+        b.clear_square(B8, BLACK, KNIGHT);
+        b.clear_square(C8, BLACK, BISHOP);
+        b.clear_square(D8, BLACK, QUEEN);
+        b.clear_square(F8, BLACK, BISHOP);
+        b.clear_square(G8, BLACK, KNIGHT);
         // White queen-side castling.
         Move::new(E1, C1).apply_to(&mut b, &mut gs);
         assert_eq!(b.get_color_on(C1), WHITE);

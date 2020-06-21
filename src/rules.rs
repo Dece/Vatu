@@ -105,6 +105,72 @@ fn get_piece_moves(
     }
 }
 
+// fn get_pawn_moves(
+//     board: &Board,
+//     game_state: &GameState,
+//     square: Square,
+//     color: Color,
+//     pseudo_legal: bool,
+// ) -> Vec<Move> {
+//     let (f, r) = (sq_file(square), sq_rank(square));
+//     let mut moves = vec!();
+//     // Direction: positive for white, negative for black.
+//     let dir = if color == WHITE { 1 } else { -1 };
+//     // Check 1 or 2 square forward.
+//     let move_len = if (color == WHITE && r == 1) || (color == BLACK && r == 6) { 2 } else { 1 };
+//     for i in 1..=move_len {
+//         let forward_r = r + dir * i;
+//         if dir > 0 && forward_r > POS_MAX {
+//             return moves
+//         }
+//         if dir < 0 && forward_r < POS_MIN {
+//             return moves
+//         }
+//         let forward: Square = sq(f, forward_r);
+//         // If forward square is empty (and we are not jumping over an occupied square), add it.
+//         if board.is_empty(forward) && (i == 1 || board.is_empty(sq(f, forward_r - dir))) {
+//             let mut m = Move::new(square, forward);
+//             // Pawns that get to the opposite rank automatically promote as queens.
+//             if (dir > 0 && forward_r == POS_MAX) || (dir < 0 && forward_r == POS_MIN) {
+//                 m.promotion = Some(QUEEN)
+//             }
+//             if pseudo_legal || !is_illegal(board, game_state, &m) {
+//                 moves.push(m);
+//             }
+//         }
+//         // Check diagonals for pieces to attack.
+//         if i == 1 {
+//             // First diagonal.
+//             if f - 1 >= POS_MIN {
+//                 let diag = sq(f - 1, forward_r);
+//                 if !board.is_empty(diag) {
+//                     let diag_color = board.get_color_on(diag);
+//                     if let Some(m) = get_capture_move(color, square, diag_color, diag, true) {
+//                         if pseudo_legal || !is_illegal(board, game_state, &m) {
+//                             moves.push(m);
+//                         }
+//                     }
+
+//                 }
+//             }
+//             // Second diagonal.
+//             if f + 1 <= POS_MAX {
+//                 let diag = sq(f + 1, forward_r);
+//                 if !board.is_empty(diag) {
+//                     let diag_color = board.get_color_on(diag);
+//                     if let Some(m) = get_capture_move(color, square, diag_color, diag, true) {
+//                         if pseudo_legal || !is_illegal(board, game_state, &m) {
+//                             moves.push(m);
+//                         }
+//                     }
+//                 }
+//             }
+//         }
+//         // TODO en passant
+//     }
+//     moves
+// }
+
 fn get_pawn_moves(
     board: &Board,
     game_state: &GameState,
@@ -112,63 +178,16 @@ fn get_pawn_moves(
     color: Color,
     pseudo_legal: bool,
 ) -> Vec<Move> {
-    let (f, r) = (sq_file(square), sq_rank(square));
-    let mut moves = vec!();
-    // Direction: positive for white, negative for black.
-    let dir = if color == WHITE { 1 } else { -1 };
-    // Check 1 or 2 square forward.
-    let move_len = if (color == WHITE && r == 1) || (color == BLACK && r == 6) { 2 } else { 1 };
-    for i in 1..=move_len {
-        let forward_r = r + dir * i;
-        if dir > 0 && forward_r > POS_MAX {
-            return moves
-        }
-        if dir < 0 && forward_r < POS_MIN {
-            return moves
-        }
-        let forward: Square = sq(f, forward_r);
-        // If forward square is empty (and we are not jumping over an occupied square), add it.
-        if board.is_empty(forward) && (i == 1 || board.is_empty(sq(f, forward_r - dir))) {
-            let mut m = Move::new(square, forward);
-            // Pawns that get to the opposite rank automatically promote as queens.
-            if (dir > 0 && forward_r == POS_MAX) || (dir < 0 && forward_r == POS_MIN) {
-                m.promotion = Some(QUEEN)
-            }
-            if pseudo_legal || !is_illegal(board, game_state, &m) {
-                moves.push(m);
-            }
-        }
-        // Check diagonals for pieces to attack.
-        if i == 1 {
-            // First diagonal.
-            if f - 1 >= POS_MIN {
-                let diag = sq(f - 1, forward_r);
-                if !board.is_empty(diag) {
-                    let diag_color = board.get_color_on(diag);
-                    if let Some(m) = get_capture_move(color, square, diag_color, diag, true) {
-                        if pseudo_legal || !is_illegal(board, game_state, &m) {
-                            moves.push(m);
-                        }
-                    }
-
-                }
-            }
-            // Second diagonal.
-            if f + 1 <= POS_MAX {
-                let diag = sq(f + 1, forward_r);
-                if !board.is_empty(diag) {
-                    let diag_color = board.get_color_on(diag);
-                    if let Some(m) = get_capture_move(color, square, diag_color, diag, true) {
-                        if pseudo_legal || !is_illegal(board, game_state, &m) {
-                            moves.push(m);
-                        }
-                    }
-                }
-            }
-        }
-        // TODO en passant
-    }
-    moves
+    get_moves_from_bb(
+        board,
+        game_state,
+        board.get_pawn_progresses(square, color) | board.get_pawn_captures(square, color),
+        square,
+        color,
+        PAWN,
+        pseudo_legal
+    )
+    // TODO en passant
 }
 
 fn get_bishop_moves(
@@ -324,6 +343,10 @@ fn get_king_moves(
 }
 
 /// Get moves from this ray bitboard.
+///
+/// Inspect all moves from the bitboard and produce a Move for each
+/// legal move, or all moves if `pseudo_legal` is true. Pawns that
+/// reach the last rank are promoted as queens.
 fn get_moves_from_bb(
     board: &Board,
     game_state: &GameState,
@@ -480,7 +503,7 @@ mod tests {
         let moves = get_piece_moves(&b, &gs, E2, WHITE, false);
         assert_eq!(moves.len(), 0);
         // 3. remove the e4 black pawn; the white pawn should not be able to jump above e3 pawn.
-        b.clear_square(E4);
+        b.clear_square(E4, BLACK, PAWN);
         let moves = get_piece_moves(&b, &gs, E2, WHITE, false);
         assert_eq!(moves.len(), 0);
 

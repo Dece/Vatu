@@ -57,6 +57,10 @@ pub enum UciCmd {
     Position(Vec<PositionArgs>),
     Go(Vec<GoArgs>),
     Quit,
+
+    // Unofficial commands mostly for debugging.
+    VatuDraw,
+
     Unknown(String),
 }
 
@@ -198,6 +202,9 @@ impl Uci {
                 self.send_engine_command(engine::Cmd::Stop);
             },
             UciCmd::Quit => return false,
+            UciCmd::VatuDraw => {
+                self.send_engine_command(engine::Cmd::DrawBoard);
+            }
             UciCmd::Unknown(c) => { self.log(format!("Unknown command: {}", c)); }
         }
         true
@@ -305,6 +312,7 @@ fn parse_command(s: &str) -> UciCmd {
         "position" => parse_position_command(&fields[1..]),
         "go" => parse_go_command(&fields[1..]),
         "quit" => UciCmd::Quit,
+        "vatudraw" => UciCmd::VatuDraw,
         c => UciCmd::Unknown(c.to_string()),
     }
 }
