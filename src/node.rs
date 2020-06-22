@@ -29,8 +29,8 @@ impl Node {
     }
 
     /// Return player moves from this node.
-    pub fn get_player_legal_moves(&self) -> Vec<Move> {
-        rules::get_player_moves(&self.board, &self.game_state, false)
+    pub fn get_player_moves(&self) -> Vec<Move> {
+        rules::get_player_moves(&self.board, &self.game_state)
     }
 
     /// Compute stats for both players for this node.
@@ -54,6 +54,6 @@ impl fmt::Display for Node {
         let mut s = vec!();
         self.board.draw_to(&mut s);
         let board_drawing = String::from_utf8_lossy(&s).to_string();
-        write!(f, "* Board:\n{}\nGame state: {}", board_drawing, self.game_state)
+        write!(f, "{}{}", board_drawing, self.game_state)
     }
 }

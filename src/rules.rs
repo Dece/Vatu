@@ -60,7 +60,7 @@ pub fn get_player_moves(
     board: &Board,
     game_state: &GameState,
 ) -> Vec<Move> {
-    let attacked_bb = board.get_rays(opposite(game_state.color));
+    let attacked_bb = board.get_full_rays(opposite(game_state.color));  // FIXME remove, doesn't w
     let mut moves = Vec::with_capacity(32);
     for r in 0..8 {
         for f in 0..8 {
@@ -190,6 +190,8 @@ fn is_illegal(
     } else {
         if let Some(king) = board.find_king(game_state.color) { king } else { return false }
     };
+    // FIXME implement unmake move
+    let attacked_bb = board.get_full_rays(opposite(game_state.color));
     attacked_bb & bit_pos(king_square) != 0
 }
 
@@ -255,7 +257,7 @@ mod tests {
         square: Square,
         color: Color
     ) -> Vec<Move> {
-        let attacked_bb = board.get_rays(opposite(game_state.color));
+        let attacked_bb = board.get_full_rays(opposite(game_state.color));
         get_piece_moves(board, game_state, square, color, attacked_bb)
     }
 

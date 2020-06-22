@@ -1,7 +1,7 @@
 //! Board statistics used for heuristics.
 
 use crate::board::*;
-use crate::rules::{GameState, get_player_moves, POS_MIN, POS_MAX};
+use crate::rules::{GameState, get_player_moves};
 
 /// Storage for board pieces stats.
 #[derive(Debug, Clone, PartialEq)]
@@ -62,7 +62,7 @@ impl BoardStats {
         self.reset();
         let color = game_state.color;
         // Compute mobility for all pieces.
-        self.mobility = get_player_moves(board, game_state, false).len() as i32;
+        self.mobility = get_player_moves(board, game_state).len() as i32;
         // Compute amount of each piece.
         for file in 0..8 {
             for rank in 0..8 {
@@ -87,12 +87,12 @@ impl BoardStats {
                         }
 
                         // Check for isolated and backward pawns.
-                        let (iso_on_prev_file, bw_on_prev_file) = if file > POS_MIN {
+                        let (iso_on_prev_file, bw_on_prev_file) = if file > FILE_A {
                             self.find_isolated_and_backward(pawn_bb, square, color, file - 1)
                         } else {
                             (true, true)
                         };
-                        let (iso_on_next_file, bw_on_next_file) = if file < POS_MAX {
+                        let (iso_on_next_file, bw_on_next_file) = if file < FILE_H {
                             self.find_isolated_and_backward(pawn_bb, square, color, file + 1)
                         } else {
                             (true, true)

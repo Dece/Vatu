@@ -130,7 +130,7 @@ impl Engine {
             Cmd::DrawBoard => {
                 let mut s = vec!();
                 self.node.board.draw_to(&mut s);
-                let s = format!("Current board:\n{}", String::from_utf8_lossy(&s));
+                let s = format!("{}", String::from_utf8_lossy(&s));
                 self.reply(Cmd::Log(s));
             }
             _ => eprintln!("Not an engine input command: {:?}", cmd),
@@ -162,10 +162,10 @@ impl Engine {
         // Castling.
         for c in fen.castling.chars() {
             match c {
-                'K' => self.node.game_state.castling |= castling::CASTLING_WH_K,
-                'Q' => self.node.game_state.castling |= castling::CASTLING_WH_Q,
-                'k' => self.node.game_state.castling |= castling::CASTLING_BL_K,
-                'q' => self.node.game_state.castling |= castling::CASTLING_BL_Q,
+                'K' => self.node.game_state.castling |= castling::CASTLE_WH_K,
+                'Q' => self.node.game_state.castling |= castling::CASTLE_WH_Q,
+                'k' => self.node.game_state.castling |= castling::CASTLE_BL_K,
+                'q' => self.node.game_state.castling |= castling::CASTLE_BL_Q,
                 _ => {}
             }
         }

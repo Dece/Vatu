@@ -163,6 +163,21 @@ pub struct Board {
     pub pieces: [Bitboard; 6],
 }
 
+/// A direction to move (file and rank).
+pub type Direction = (i8, i8);
+/// Direction in which bishops moves.
+pub const BISHOP_DIRS: [Direction; 4] = [
+    (1, 1), (1, -1), (-1, -1), (-1, 1)
+];
+/// Direction in which rooks moves.
+pub const ROOK_DIRS: [Direction; 4] = [
+    (1, 0), (0, 1), (-1, 0), (0, -1)
+];
+/// Direction in which queens moves.
+pub const QUEEN_DIRS: [Direction; 8] = [
+    (1, 0), (1, 1), (0, 1), (-1, 1), (-1, 0), (-1, -1), (0, -1), (1, -1)
+];
+
 // Factories.
 impl Board {
     /// Generate the board of a new game.
@@ -311,14 +326,15 @@ impl Board {
         None
     }
 
-    /// Get capture rays for all pieces of `color`.
+    /// Get all rays for all pieces of `color`.
     ///
     /// This function is used to find illegal moves for opposite color.
     ///
     /// This add move rays of all piece types, pawns being a special
     /// case: their diagonal capture are all added even though no enemy
-    /// piece is on the target square.
-    pub fn get_rays(&self, color: Color) -> Bitboard {
+    /// piece is on the target square. Rays include simple moves,
+    /// captures and friendly pieces being protected.
+    pub fn get_full_rays(&self, color: Color) -> Bitboard {
         let mut ray_bb = 0;
         let color_bb = self.by_color(color);
         for square in 0..NUM_SQUARES {
@@ -327,11 +343,11 @@ impl Board {
             }
             ray_bb |= match self.get_piece_on(square) {
                 PAWN => self.get_pawn_protections(square, color),
-                BISHOP => self.get_bishop_rays(square, color),
-                KNIGHT => self.get_knight_rays(square, color),
-                ROOK => self.get_rook_rays(square, color),
-                QUEEN => self.get_queen_rays(square, color),
-                KING => self.get_king_rays(square, color),
+                BISHOP => self.get_bishop_full_rays(square, color),
+                KNIGHT => self.get_knight_full_rays(square),
+                ROOK => self.get_rook_full_rays(square, color),
+                QUEEN => self.get_queen_full_rays(square, color),
+                KING => self.get_king_full_rays(square),
                 _ => { panic!("No piece on square {} but color {} bit is set.", square, color) }
             };
         }
@@ -373,19 +389,32 @@ impl Board {
 
     /// Get bishop rays: moves and captures bitboard.
     pub fn get_bishop_rays(&self, square: Square, color: Color) -> Bitboard {
-        self.get_blockable_rays(square, color, &[(1, 1), (1, -1), (-1, -1), (-1, 1)])
+        self.get_blockable_rays(square, color, &BISHOP_DIRS, false)
+    }
+
+    /// Get all bishop rays: moves, captures and protections bitboard.
+    pub fn get_bishop_full_rays(&self, square: Square, color: Color) -> Bitboard {
+        self.get_blockable_rays(square, color, &BISHOP_DIRS, true)
     }
 
     /// Get rook rays: moves and captures bitboard.
     pub fn get_rook_rays(&self, square: Square, color: Color) -> Bitboard {
-        self.get_blockable_rays(square, color, &[(1, 0), (0, 1), (-1, 0), (0, -1)])
+        self.get_blockable_rays(square, color, &ROOK_DIRS, false)
+    }
+
+    /// Get all rook rays: moves, captures and protections bitboard.
+    pub fn get_rook_full_rays(&self, square: Square, color: Color) -> Bitboard {
+        self.get_blockable_rays(square, color, &ROOK_DIRS, true)
     }
 
     /// Get queen rays: moves and captures bitboard.
     pub fn get_queen_rays(&self, square: Square, color: Color) -> Bitboard {
-        self.get_blockable_rays(
-            square, color, &[(1, 0), (1, 1), (0, 1), (-1, 1), (-1, 0), (-1, -1), (0, -1), (1, -1)]
-        )
+        self.get_blockable_rays(square, color, &QUEEN_DIRS, false)
+    }
+
+    /// Get all queen rays: moves, captures and protections bitboard.
+    pub fn get_queen_full_rays(&self, square: Square, color: Color) -> Bitboard {
+        self.get_blockable_rays(square, color, &QUEEN_DIRS, true)
     }
 
     /// Get rays for piece that can move how far they want.
@@ -393,14 +422,18 @@ impl Board {
     /// Used for bishops, rooks and queens. A ray bitboard is the
     /// combination of squares either empty or occupied by an enemy
     /// piece they can reach.
-    fn get_blockable_rays(&self,
+    ///
+    /// If `protection` is true, consider friend pieces in rays as well.
+    fn get_blockable_rays(
+        &self,
         square: Square,
         color: Color,
-        directions: &[(i8, i8)]
+        directions: &[(i8, i8)],
+        include_protections: bool
     ) -> Bitboard {
         let mut rays_bb: Bitboard = 0;
         let color_bb = self.by_color(color);
-        let enemy_bb = self.by_color(opposite(color));
+        let combined_bb = self.combined();
         for dir in directions {
             let mut ray_f = sq_file(square);
             let mut ray_r = sq_rank(square);
@@ -411,11 +444,11 @@ impl Board {
                     break
                 }
                 let bp = bit_pos(sq(ray_f, ray_r));
-                if color_bb & bp != 0 {
+                if !include_protections && color_bb & bp != 0 {
                     break
                 }
                 rays_bb |= bp;
-                if enemy_bb & bp != 0 {
+                if combined_bb & bp != 0 {
                     break
                 }
             }
@@ -428,9 +461,19 @@ impl Board {
         KNIGHT_RAYS[square as usize] & !self.by_color(color)
     }
 
+    /// Get all knight rays: moves, captures and protections bitboard.
+    pub fn get_knight_full_rays(&self, square: Square) -> Bitboard {
+        KNIGHT_RAYS[square as usize]
+    }
+
     /// Get king rays: moves and captures bitboard.
     pub fn get_king_rays(&self, square: Square, color: Color) -> Bitboard {
         KING_RAYS[square as usize] & !self.by_color(color)
+    }
+
+    /// Get all king rays: moves, captures and protections bitboard.
+    pub fn get_king_full_rays(&self, square: Square) -> Bitboard {
+        KING_RAYS[square as usize]
     }
 
     /// Debug only: write a text view of the board to stderr.
@@ -589,10 +632,11 @@ mod tests {
     }
 
     #[test]
-    fn test_get_rays() {
+    fn test_get_full_rays() {
         let b = Board::new();
-        assert_eq!(count_bits(b.get_rays(WHITE)), 8);
-        assert_eq!(count_bits(b.get_rays(BLACK)), 8);
+        // Third ranks protected, all pieces protected except rooks = 22 squares.
+        assert_eq!(count_bits(b.get_full_rays(WHITE)), 22);
+        assert_eq!(count_bits(b.get_full_rays(BLACK)), 22);
     }
 
     #[test]

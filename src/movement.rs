@@ -37,13 +37,13 @@ impl Move {
     /// Apply this move to `board` and `game_state`.
     pub fn apply_to(&self, board: &mut Board, game_state: &mut GameState) {
         // If a king moves, remove it from castling options.
-        if self.source == E1 { game_state.castling &= !CASTLING_WH_MASK; }
-        else if self.source == E8 { game_state.castling &= !CASTLING_BL_MASK; }
+        if self.source == E1 { game_state.castling &= !CASTLE_WH_MASK; }
+        else if self.source == E8 { game_state.castling &= !CASTLE_BL_MASK; }
         // Same for rooks.
-        if self.source == A1 || self.dest == A1 { game_state.castling &= !CASTLING_WH_Q; }
-        else if self.source == H1 || self.dest == H1 { game_state.castling &= !CASTLING_WH_K; }
-        else if self.source == A8 || self.dest == A8 { game_state.castling &= !CASTLING_BL_Q; }
-        else if self.source == H8 || self.dest == H8 { game_state.castling &= !CASTLING_BL_K; }
+        if self.source == A1 || self.dest == A1 { game_state.castling &= !CASTLE_WH_Q; }
+        else if self.source == H1 || self.dest == H1 { game_state.castling &= !CASTLE_WH_K; }
+        else if self.source == A8 || self.dest == A8 { game_state.castling &= !CASTLE_BL_Q; }
+        else if self.source == H8 || self.dest == H8 { game_state.castling &= !CASTLE_BL_K; }
         // Update board and game state.
         self.apply_to_board(board);
         game_state.color = opposite(game_state.color);
@@ -56,10 +56,10 @@ impl Move {
         if piece == KING {
             if let Some(castle) = self.get_castle() {
                 match castle {
-                    CASTLING_WH_K => { board.move_square(E1, G1); board.move_square(H1, F1); }
-                    CASTLING_WH_Q => { board.move_square(E1, C1); board.move_square(A1, D1); }
-                    CASTLING_BL_K => { board.move_square(E8, G8); board.move_square(H8, F8); }
-                    CASTLING_BL_Q => { board.move_square(E8, C8); board.move_square(A8, D8); }
+                    CASTLE_WH_K => { board.move_square(E1, G1); board.move_square(H1, F1); }
+                    CASTLE_WH_Q => { board.move_square(E1, C1); board.move_square(A1, D1); }
+                    CASTLE_BL_K => { board.move_square(E8, G8); board.move_square(H8, F8); }
+                    CASTLE_BL_Q => { board.move_square(E8, C8); board.move_square(A8, D8); }
                     _ => { panic!("Invalid castle.") }
                 }
                 return
@@ -75,10 +75,10 @@ impl Move {
     /// Get the corresponding castling flag for this move.
     pub fn get_castle(&self) -> Option<Castle> {
         match (self.source, self.dest) {
-            (E1, C1) => Some(CASTLING_WH_Q),
-            (E1, G1) => Some(CASTLING_WH_K),
-            (E8, C8) => Some(CASTLING_BL_Q),
-            (E8, G8) => Some(CASTLING_BL_K),
+            (E1, C1) => Some(CASTLE_WH_Q),
+            (E1, G1) => Some(CASTLE_WH_K),
+            (E8, C8) => Some(CASTLE_BL_Q),
+            (E8, G8) => Some(CASTLE_BL_K),
             _ => None,
         }
     }
@@ -86,10 +86,10 @@ impl Move {
     /// Get the move for this castle.
     pub fn get_castle_move(castle: u8) -> Move {
         match castle {
-            CASTLING_WH_Q => Move::new(E1, C1),
-            CASTLING_WH_K => Move::new(E1, G1),
-            CASTLING_BL_Q => Move::new(E8, C8),
-            CASTLING_BL_K => Move::new(E8, G8),
+            CASTLE_WH_Q => Move::new(E1, C1),
+            CASTLE_WH_K => Move::new(E1, G1),
+            CASTLE_BL_Q => Move::new(E8, C8),
+            CASTLE_BL_K => Move::new(E8, G8),
             _ => panic!("Illegal castling requested: {:08b}", castle),
         }
     }
@@ -164,7 +164,7 @@ mod tests {
     fn test_apply_to_castling() {
         let mut b = Board::new();
         let mut gs = GameState::new();
-        assert_eq!(gs.castling, CASTLING_MASK);
+        assert_eq!(gs.castling, CASTLE_MASK);
 
         // On a starting board, start by making place for all castles.
         b.clear_square(B1, WHITE, KNIGHT);
@@ -185,7 +185,7 @@ mod tests {
         assert_eq!(b.get_piece_on(D1), ROOK);
         assert!(b.is_empty(A1));
         assert!(b.is_empty(E1));
-        assert_eq!(gs.castling, CASTLING_BL_MASK);
+        assert_eq!(gs.castling, CASTLE_BL_MASK);
         // Black king-side castling.
         Move::new(E8, G8).apply_to(&mut b, &mut gs);
         assert_eq!(b.get_color_on(G8), BLACK);
@@ -200,10 +200,10 @@ mod tests {
 
     #[test]
     fn test_get_castle() {
-        assert_eq!(Move::new(E1, C1).get_castle(), Some(CASTLING_WH_Q));
-        assert_eq!(Move::new(E1, G1).get_castle(), Some(CASTLING_WH_K));
-        assert_eq!(Move::new(E8, C8).get_castle(), Some(CASTLING_BL_Q));
-        assert_eq!(Move::new(E8, G8).get_castle(), Some(CASTLING_BL_K));
+        assert_eq!(Move::new(E1, C1).get_castle(), Some(CASTLE_WH_Q));
+        assert_eq!(Move::new(E1, G1).get_castle(), Some(CASTLE_WH_K));
+        assert_eq!(Move::new(E8, C8).get_castle(), Some(CASTLE_BL_Q));
+        assert_eq!(Move::new(E8, G8).get_castle(), Some(CASTLE_BL_K));
         assert_eq!(Move::new(D2, D4).get_castle(), None);
     }
 
