@@ -1,21 +1,53 @@
 //! Castling flags.
 
+use crate::board::{Bitboard, RANK_1, RANK_8};
+
 pub type Castle = u8;
 
-pub const CASTLING_WH_K: Castle    = 0b00000001;
-pub const CASTLING_WH_Q: Castle    = 0b00000010;
-pub const CASTLING_WH_MASK: Castle = 0b00000011;
-pub const CASTLING_BL_K: Castle    = 0b00000100;
-pub const CASTLING_BL_Q: Castle    = 0b00001000;
-pub const CASTLING_BL_MASK: Castle = 0b00001100;
-pub const CASTLING_K_MASK: Castle  = 0b00000101;
-pub const CASTLING_Q_MASK: Castle  = 0b00001010;
-pub const CASTLING_MASK: Castle    = 0b00001111;
+pub const CASTLE_WH_K: Castle    = 0b00000001;
+pub const CASTLE_WH_Q: Castle    = 0b00000010;
+pub const CASTLE_WH_MASK: Castle = 0b00000011;
+pub const CASTLE_BL_K: Castle    = 0b00000100;
+pub const CASTLE_BL_Q: Castle    = 0b00001000;
+pub const CASTLE_BL_MASK: Castle = 0b00001100;
+pub const CASTLE_K_MASK: Castle  = 0b00000101;
+pub const CASTLE_Q_MASK: Castle  = 0b00001010;
+pub const CASTLE_MASK: Castle    = 0b00001111;
 
-/// Castling sides parameters.
+/// Index castling masks with their color.
+pub const CASTLE_MASK_BY_COLOR: [Castle; 2] = [CASTLE_WH_MASK, CASTLE_BL_MASK];
+
+/// Index castling ranks with their color.
+pub const CASTLE_RANK_BY_COLOR: [i8; 2] = [RANK_1, RANK_8];
+
+pub const CASTLE_SIDE_K: usize = 0;
+pub const CASTLE_SIDE_Q: usize = 1;
+pub const NUM_CASTLE_SIDES: usize = 2;
+
+/// Index castling sides using CASTLE_SIDE_K and CASTLE_SIDE_Q.
+pub const CASTLE_SIDES: [Castle; 2] = [CASTLE_K_MASK, CASTLE_Q_MASK];
+
+/// Castle paths that must not be under attack, by color and side.
 ///
-/// For both sides, the 3-uple contains files that should be empty
-/// and not attacked, an optional file that should be empty for
-/// queen-side, and the castling side-mask.
-pub const CASTLING_SIDES: [([i8; 2], Option<i8>, Castle); 2] =
-    [([5i8, 6i8], None, CASTLING_K_MASK), ([3i8, 2i8], Some(1i8), CASTLING_Q_MASK)];
+/// This includes the original king position, its target square and
+/// the square in between.
+pub const CASTLE_LEGALITY_PATHS: [[Bitboard; 2]; 2] = [
+    [
+        0b00000000_00000001_00000001_00000001_00000000_00000000_00000000_00000000,  // White Kside.
+        0b00000000_00000000_00000000_00000001_00000001_00000001_00000000_00000000,  // White Qside.
+    ], [
+        0b00000000_10000000_10000000_10000000_00000000_00000000_00000000_00000000,  // Black Kside.
+        0b00000000_00000000_00000000_10000000_10000000_10000000_00000000_00000000,  // Black Qside.
+    ]
+];
+
+/// Castle paths that must be empty.
+pub const CASTLE_MOVE_PATHS: [[Bitboard; 2]; 2] = [
+    [
+        0b00000000_00000001_00000001_00000000_00000000_00000000_00000000_00000000,  // White Kside.
+        0b00000000_00000000_00000000_00000000_00000001_00000001_00000001_00000000,  // White Qside.
+    ], [
+        0b00000000_10000000_10000000_00000000_00000000_00000000_00000000_00000000,  // Black Kside.
+        0b00000000_00000000_00000000_00000000_10000000_10000000_10000000_00000000,  // Black Qside.
+    ]
+];

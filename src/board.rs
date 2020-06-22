@@ -311,6 +311,33 @@ impl Board {
         None
     }
 
+    /// Get capture rays for all pieces of `color`.
+    ///
+    /// This function is used to find illegal moves for opposite color.
+    ///
+    /// This add move rays of all piece types, pawns being a special
+    /// case: their diagonal capture are all added even though no enemy
+    /// piece is on the target square.
+    pub fn get_rays(&self, color: Color) -> Bitboard {
+        let mut ray_bb = 0;
+        let color_bb = self.by_color(color);
+        for square in 0..NUM_SQUARES {
+            if color_bb & bit_pos(square) == 0 {
+                continue
+            }
+            ray_bb |= match self.get_piece_on(square) {
+                PAWN => self.get_pawn_protections(square, color),
+                BISHOP => self.get_bishop_rays(square, color),
+                KNIGHT => self.get_knight_rays(square, color),
+                ROOK => self.get_rook_rays(square, color),
+                QUEEN => self.get_queen_rays(square, color),
+                KING => self.get_king_rays(square, color),
+                _ => { panic!("No piece on square {} but color {} bit is set.", square, color) }
+            };
+        }
+        ray_bb
+    }
+
     /// Get pawn progress: only forward moves.
     pub fn get_pawn_progresses(&self, square: Square, color: Color) -> Bitboard {
         let mut progress_bb = PAWN_PROGRESSES[color][square as usize] & !self.combined();
@@ -329,8 +356,19 @@ impl Board {
     }
 
     /// Get pawn captures: only moves capturing enemy pieces.
+    ///
+    /// If a pawn is not currently attacking any piece, the bitboard
+    /// will be empty.
     pub const fn get_pawn_captures(&self, square: Square, color: Color) -> Bitboard {
         PAWN_CAPTURES[color][square as usize] & self.by_color(opposite(color))
+    }
+
+    /// Get pawn capture bitboard, without considering enemy pieces.
+    ///
+    /// Both possible diagonals will be set, even if a friendly piece
+    /// occupies one.
+    pub const fn get_pawn_protections(&self, square: Square, color: Color) -> Bitboard {
+        PAWN_CAPTURES[color][square as usize]
     }
 
     /// Get bishop rays: moves and captures bitboard.
@@ -551,6 +589,13 @@ mod tests {
     }
 
     #[test]
+    fn test_get_rays() {
+        let b = Board::new();
+        assert_eq!(count_bits(b.get_rays(WHITE)), 8);
+        assert_eq!(count_bits(b.get_rays(BLACK)), 8);
+    }
+
+    #[test]
     fn test_get_pawn_progresses() {
         let mut b = Board::new_empty();
 
@@ -601,6 +646,17 @@ mod tests {
         b.set_square(C2, WHITE, PAWN);
         b.set_square(D3, BLACK, PAWN);
         assert_eq!(count_bits(b.get_pawn_captures(C2, WHITE)), 2);
+    }
+
+    #[test]
+    fn test_get_pawn_protections() {
+        let mut b = Board::new_empty();
+
+        // A pawn not on a border file or rank always protect 2 squares.
+        b.set_square(B2, WHITE, PAWN);
+        assert_eq!(count_bits(b.get_pawn_protections(B2, WHITE)), 2);
+        b.set_square(A2, WHITE, PAWN);
+        assert_eq!(count_bits(b.get_pawn_protections(A2, WHITE)), 1);
     }
 
     #[test]
