@@ -365,8 +365,10 @@ fn get_moves_from_bb(
             // Automatic queen promotion for pawns moving to the opposite rank.
             if
                 piece == PAWN
-                && (color == WHITE && sq_rank(ray_square) == RANK_8)
-                || (color == BLACK && sq_rank(ray_square) == RANK_1)
+                && (
+                    (color == WHITE && sq_rank(ray_square) == RANK_8)
+                    || (color == BLACK && sq_rank(ray_square) == RANK_1)
+                )
             {
                 m.promotion = Some(QUEEN);
             }
