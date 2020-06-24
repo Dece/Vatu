@@ -24,8 +24,12 @@ impl Node {
     }
 
     /// Apply a move to this node.
-    pub fn apply_move(&mut self, m: &Move) {
+    pub fn apply_move(&mut self, m: &mut Move) {
         m.apply_to(&mut self.board, &mut self.game_state);
+    }
+
+    pub fn unmake_move(&mut self, m: &Move) {
+        m.unmake(&mut self.board, &mut self.game_state);
     }
 
     /// Return player moves from this node.

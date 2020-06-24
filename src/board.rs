@@ -315,6 +315,14 @@ impl Board {
         self.set_square(dest, source_color, source_piece);
     }
 
+    /// Change the piece type at square.
+    #[inline]
+    pub fn set_piece(&mut self, square: Square, from_piece: Piece, to_piece: Piece) {
+        let bp = bit_pos(square);
+        self.pieces[from_piece] &= !bp;
+        self.pieces[to_piece] |= bp;
+    }
+
     /// Find position of this king.
     pub fn find_king(&self, color: Color) -> Option<Square> {
         let king_bb = self.colors[color] & self.pieces[KING];
@@ -620,6 +628,14 @@ mod tests {
         assert_eq!(b.get_piece_on(D8), QUEEN);
         assert_eq!(b.get_piece_on(E1), KING);
         assert_eq!(b.get_piece_on(E8), KING);
+    }
+
+    #[test]
+    fn test_set_piece() {
+        let mut b = Board::new();
+        b.set_piece(E1, KING, QUEEN);
+        assert_eq!(b.get_color_on(E1), WHITE);
+        assert_eq!(b.get_piece_on(E1), QUEEN);
     }
 
     #[test]

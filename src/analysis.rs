@@ -110,7 +110,7 @@ impl Analyzer {
 
         self.start_time = Some(Instant::now());
         self.current_per_second_timer = Some(Instant::now());
-        let (max_score, best_move) = self.negamax(&self.node.clone(), MIN_F32, MAX_F32, 0);
+        let (max_score, best_move) = self.negamax(&mut self.node.clone(), MIN_F32, MAX_F32, 0);
 
         if let Some(m) = best_move {
             let log_str = format!("Best move {} evaluated {}", m.to_uci_string(), max_score);
@@ -158,7 +158,7 @@ impl Analyzer {
     /// lower score bound and `beta` the upper bound.
     fn negamax(
         &mut self,
-        node: &Node,
+        node: &mut Node,
         alpha: f32,
         beta: f32,
         depth: u32,
@@ -185,18 +185,18 @@ impl Analyzer {
         }
 
         // Get negamax for playable moves.
-        let moves = node.get_player_moves();
+        let mut moves = node.get_player_moves();
         let mut alpha = alpha;
         let mut best_score = MIN_F32;
         let mut best_move = None;
-        for m in moves {
-            let mut sub_node = node.clone();
-            sub_node.apply_move(&m);
-            let result = self.negamax(&sub_node, -beta, -alpha, depth + 1);
+        for m in &mut moves {
+            node.apply_move(m);
+            let result = self.negamax(node, -beta, -alpha, depth + 1);
+            node.unmake_move(m);
             let score = -result.0;
             if score > best_score {
                 best_score = score;
-                best_move = Some(m);
+                best_move = Some(m.to_owned());
             }
             if best_score > alpha {
                 alpha = best_score;

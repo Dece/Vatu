@@ -9,9 +9,16 @@ use crate::rules::GameState;
 /// A movement, with before/after positions and optional promotion.
 #[derive(Clone, PartialEq)]
 pub struct Move {
+    /// Square from which a piece moves.
     pub source: Square,
+    /// Square to which a piece moves.
     pub dest: Square,
+    /// Promotion piece for pawns reaching the last rank.
     pub promotion: Option<Piece>,
+    /// Captured piece, if any.
+    pub capture: Option<Piece>,
+    /// Castle options before the move. This is set when the move is first applied.
+    pub old_castles: Castle,
 }
 
 impl fmt::Debug for Move {
@@ -26,16 +33,17 @@ pub const UCI_NULL_MOVE_STR: &str = "0000";
 impl Move {
     /// Build a move from `source` to `dest`, no promotion.
     pub const fn new(source: Square, dest: Square) -> Move {
-        Move { source, dest, promotion: None }
+        Move { source, dest, promotion: None, capture: None, old_castles: 0 }
     }
 
     /// Build a move from `source` to `dest`, with a promotion.
     pub const fn new_promotion(source: Square, dest: Square, promotion: Piece) -> Move {
-        Move { source, dest, promotion: Some(promotion) }
+        Move { source, dest, promotion: Some(promotion), capture: None, old_castles: 0 }
     }
 
     /// Apply this move to `board` and `game_state`.
-    pub fn apply_to(&self, board: &mut Board, game_state: &mut GameState) {
+    pub fn apply_to(&mut self, board: &mut Board, game_state: &mut GameState) {
+        self.old_castles = game_state.castling;
         // If a king moves, remove it from castling options.
         if self.source == E1 { game_state.castling &= !CASTLE_WH_MASK; }
         else if self.source == E8 { game_state.castling &= !CASTLE_BL_MASK; }
@@ -50,7 +58,7 @@ impl Move {
     }
 
     /// Apply the move into `board`.
-    pub fn apply_to_board(&self, board: &mut Board) {
+    pub fn apply_to_board(&mut self, board: &mut Board) {
         let piece = board.get_piece_on(self.source);
         // If a king is castling, apply special move.
         if piece == KING {
@@ -65,11 +73,36 @@ impl Move {
                 return
             }
         }
+        if !board.is_empty(self.dest) {
+            self.capture = Some(board.get_piece_on(self.dest));
+        }
         board.move_square(self.source, self.dest);
         if let Some(piece) = self.promotion {
-            let color = board.get_color_on(self.dest);
-            board.set_square(self.dest, color, piece);
+            board.set_piece(self.dest, PAWN, piece);
         }
+    }
+
+    /// Unmake a move.
+    pub fn unmake(&self, board: &mut Board, game_state: &mut GameState) {
+        if let Some(castle) = self.get_castle() {
+            match castle {
+                CASTLE_WH_K => { board.move_square(G1, E1); board.move_square(F1, H1); }
+                CASTLE_WH_Q => { board.move_square(C1, E1); board.move_square(D1, A1); }
+                CASTLE_BL_K => { board.move_square(G8, E8); board.move_square(F8, H8); }
+                CASTLE_BL_Q => { board.move_square(C8, E8); board.move_square(D8, A8); }
+                _ => { panic!("Invalid castle.") }
+            }
+        } else {
+            board.move_square(self.dest, self.source);
+            if let Some(piece) = self.promotion {
+                board.set_piece(self.source, piece, PAWN)
+            }
+            if let Some(piece) = self.capture {
+                board.set_square(self.dest, opposite(game_state.color), piece);
+            }
+        }
+        game_state.castling = self.old_castles;
+        game_state.color = opposite(game_state.color);
     }
 
     /// Get the corresponding castling flag for this move.
@@ -109,7 +142,9 @@ impl Move {
                 })
             } else {
                 None
-            }
+            },
+            capture: None,
+            old_castles: 0,
         }
     }
 
@@ -148,16 +183,20 @@ mod tests {
         b.set_square(D4, WHITE, KNIGHT);
         b.set_square(F4, BLACK, KNIGHT);
         // Move white knight in a position attacked by black knight.
-        Move::new(D4, E6).apply_to_board(&mut b);
+        let mut m = Move::new(D4, E6);
+        m.apply_to_board(&mut b);
         assert!(b.is_empty(D4));
         assert_eq!(b.get_color_on(E6), WHITE);
         assert_eq!(b.get_piece_on(E6), KNIGHT);
         assert_eq!(count_bits(b.combined()), 2);
+        assert!(m.capture.is_none());
         // Sack it with black knight
-        Move::new(F4, E6).apply_to_board(&mut b);
+        let mut m = Move::new(F4, E6);
+        m.apply_to_board(&mut b);
         assert_eq!(b.get_color_on(E6), BLACK);
         assert_eq!(b.get_piece_on(E6), KNIGHT);
         assert_eq!(count_bits(b.combined()), 1);
+        assert_eq!(m.capture.unwrap(), KNIGHT);
     }
 
     #[test]
@@ -196,6 +235,20 @@ mod tests {
         assert!(b.is_empty(E8));
         // At the end, no more castling options for both sides.
         assert_eq!(gs.castling, 0);
+    }
+
+    #[test]
+    fn test_unmake() {
+        let mut b = Board::new_empty();
+        let mut gs = GameState::new();
+
+        b.set_square(D4, WHITE, PAWN);
+        let mut m = Move::new(D4, D5);
+        m.apply_to(&mut b, &mut gs);
+        m.unmake(&mut b, &mut gs);
+        assert!(b.is_empty(D5));
+        assert_eq!(b.get_color_on(D4), WHITE);
+        assert_eq!(b.get_piece_on(D4), PAWN);
     }
 
     #[test]

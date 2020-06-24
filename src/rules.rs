@@ -279,7 +279,8 @@ mod tests {
         // Check that a pawn (here white queen's pawn) can move forward if the road is free.
         b.set_square(D3, WHITE, PAWN);
         let moves = get_legal_piece_moves(&b, &gs, D3, WHITE);
-        assert!(moves.len() == 1 && moves.contains(&Move::new(D3, D4)));
+        assert_eq!(moves.len(), 1);
+        assert!(moves.contains(&Move::new(D3, D4)));
 
         // Check that a pawn (here white king's pawn) can move 2 square forward on first move.
         b.set_square(E2, WHITE, PAWN);
@@ -292,7 +293,8 @@ mod tests {
         // 1. black pawn 2 square forward; only 1 square forward available from start pos.
         b.set_square(E4, BLACK, PAWN);
         let moves = get_legal_piece_moves(&b, &gs, E2, WHITE);
-        assert!(moves.len() == 1 && moves.contains(&Move::new(E2, E3)));
+        assert_eq!(moves.len(), 1);
+        assert!(moves.contains(&Move::new(E2, E3)));
         // 2. black pawn 1 square forward; no square available.
         b.set_square(E3, BLACK, PAWN);
         let moves = get_legal_piece_moves(&b, &gs, E2, WHITE);
@@ -305,18 +307,17 @@ mod tests {
         // Check that a pawn can take a piece diagonally.
         b.set_square(F3, BLACK, PAWN);
         let moves = get_legal_piece_moves(&b, &gs, E2, WHITE);
-        assert!(moves.len() == 1 && moves.contains(&Move::new(E2, F3)));
+        assert_eq!(moves.len(), 1);
         b.set_square(D3, BLACK, PAWN);
         let moves = get_legal_piece_moves(&b, &gs, E2, WHITE);
         assert_eq!(moves.len(), 2);
-        assert!(moves.contains( &Move::new(E2, F3) ));
-        assert!(moves.contains( &Move::new(E2, D3) ));
 
         // Check that a pawn moving to the last rank leads to queen promotion.
         // 1. by simply moving forward.
         b.set_square(A7, WHITE, PAWN);
         let moves = get_legal_piece_moves(&b, &gs, A7, WHITE);
-        assert!(moves.len() == 1 && moves.contains(&Move::new_promotion(A7, A8, QUEEN)));
+        assert_eq!(moves.len(), 1);
+        assert!(moves.contains(&Move::new_promotion(A7, A8, QUEEN)));
     }
 
     #[test]

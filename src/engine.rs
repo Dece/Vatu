@@ -181,13 +181,8 @@ impl Engine {
     }
 
     /// Apply a series of moves to the current node.
-    fn apply_moves(&mut self, moves: &Vec<Move>) {
-        moves.iter().for_each(|m| self.apply_move(m));
-    }
-
-    /// Apply a move to the current node.
-    fn apply_move(&mut self, m: &Move) {
-        m.apply_to(&mut self.node.board, &mut self.node.game_state);
+    fn apply_moves(&mut self, moves: &mut Vec<Move>) {
+        moves.iter_mut().for_each(|m| m.apply_to(&mut self.node.board, &mut self.node.game_state));
     }
 
     /// Start working on board, returning the best move found.
@@ -234,7 +229,7 @@ impl Engine {
                     self.apply_fen(&fen);
                 },
                 uci::PositionArgs::Moves(moves) => {
-                    self.apply_moves(&moves);
+                    self.apply_moves(&mut moves.clone());
                 }
             }
         }
