@@ -62,8 +62,8 @@ pub enum Cmd {
     WorkerInfo(Vec<analysis::AnalysisInfo>),
     /// Send best move found by analysis worker.
     WorkerBestMove(Option<Move>),
-    /// Draw board in logs.
-    DrawBoard,
+    /// Log current node.
+    LogNode,
 
     // Commands that can be sent by the engine.
 
@@ -127,11 +127,14 @@ impl Engine {
             Cmd::WorkerInfo(infos) => self.reply(Cmd::Info(infos.to_vec())),
             Cmd::WorkerBestMove(m) => self.reply(Cmd::BestMove(m.clone())),
             // Other commands.
-            Cmd::DrawBoard => {
+            Cmd::LogNode => {
                 let mut s = vec!();
                 self.node.board.draw_to(&mut s);
-                let s = format!("{}", String::from_utf8_lossy(&s));
-                self.reply(Cmd::Log(s));
+                self.reply(Cmd::Log(format!(
+                    "Current node:\n{}{}",
+                    String::from_utf8_lossy(&s),
+                    self.node.game_state
+                )));
             }
             _ => eprintln!("Not an engine input command: {:?}", cmd),
         }
