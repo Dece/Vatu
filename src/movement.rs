@@ -95,10 +95,10 @@ impl Move {
         } else {
             board.move_square(self.dest, self.source);
             if let Some(piece) = self.promotion {
-                board.set_piece(self.source, piece, PAWN)
+                board.set_piece(self.source, piece, PAWN);
             }
             if let Some(piece) = self.capture {
-                board.set_square(self.dest, opposite(game_state.color), piece);
+                board.set_square(self.dest, game_state.color, piece);
             }
         }
         game_state.castling = self.old_castles;

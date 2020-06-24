@@ -163,6 +163,7 @@ impl Engine {
             _ => {}
         };
         // Castling.
+        self.node.game_state.castling = 0;
         for c in fen.castling.chars() {
             match c {
                 'K' => self.node.game_state.castling |= castling::CASTLE_WH_K,

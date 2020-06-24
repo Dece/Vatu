@@ -119,7 +119,7 @@ impl Analyzer {
         } else {
             // If no best move could be found, checkmate is unavoidable; send the first legal move.
             self.log("Checkmate is unavoidable.".to_string());
-            let moves = rules::get_player_moves(&self.node.board, &self.node.game_state);
+            let moves = rules::get_player_moves(&mut self.node.board, &mut self.node.game_state);
             let m = if moves.len() > 0 { Some(moves[0].clone()) } else { None };
             self.report_best_move(m);
         }

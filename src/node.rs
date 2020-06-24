@@ -33,13 +33,13 @@ impl Node {
     }
 
     /// Return player moves from this node.
-    pub fn get_player_moves(&self) -> Vec<Move> {
-        rules::get_player_moves(&self.board, &self.game_state)
+    pub fn get_player_moves(&mut self) -> Vec<Move> {
+        rules::get_player_moves(&mut self.board, &mut self.game_state)
     }
 
     /// Compute stats for both players for this node.
-    pub fn compute_stats(&self) -> (stats::BoardStats, stats::BoardStats) {
-        stats::BoardStats::new_from(&self.board, &self.game_state)
+    pub fn compute_stats(&mut self) -> (stats::BoardStats, stats::BoardStats) {
+        stats::BoardStats::new_from(&mut self.board, &mut self.game_state)
     }
 }
 

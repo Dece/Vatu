@@ -31,12 +31,12 @@ impl BoardStats {
     ///
     /// The playing color will have its stats filled in the first
     /// BoardStats object, its opponent in the second.
-    pub fn new_from(board: &Board, game_state: &GameState) -> (BoardStats, BoardStats) {
+    pub fn new_from(board: &mut Board, game_state: &mut GameState) -> (BoardStats, BoardStats) {
         let mut stats = (BoardStats::new(), BoardStats::new());
         let mut gs = game_state.clone();
-        stats.0.compute(board, &gs);
+        stats.0.compute(board, &mut gs);
         gs.color = opposite(gs.color);
-        stats.1.compute(board, &gs);
+        stats.1.compute(board, &mut gs);
         stats
     }
 
@@ -58,7 +58,7 @@ impl BoardStats {
     ///
     /// Only the current playing side stats are created,
     /// prepare the game_state accordingly.
-    pub fn compute(&mut self, board: &Board, game_state: &GameState) {
+    pub fn compute(&mut self, board: &mut Board, game_state: &mut GameState) {
         self.reset();
         let color = game_state.color;
         // Compute mobility for all pieces.
@@ -157,8 +157,8 @@ mod tests {
     #[test]
     fn test_compute_stats() {
         // Check that initial stats are correct.
-        let b = Board::new();
-        let gs = GameState::new();
+        let mut b = Board::new();
+        let mut gs = GameState::new();
         let initial_stats = BoardStats {
             num_pawns: 8,
             num_bishops: 2,
@@ -171,7 +171,7 @@ mod tests {
             num_isolated_pawns: 0,
             mobility: 20,
         };
-        let mut stats = BoardStats::new_from(&b, &gs);
+        let mut stats = BoardStats::new_from(&mut b, &mut gs);
         assert!(stats.0 == stats.1);
         assert!(stats.0 == initial_stats);
 
@@ -179,15 +179,15 @@ mod tests {
         let mut b = Board::new_empty();
         b.set_square(D4, WHITE, PAWN);
         b.set_square(D6, WHITE, PAWN);
-        stats.0.compute(&b, &gs);
+        stats.0.compute(&mut b, &mut gs);
         assert_eq!(stats.0.num_doubled_pawns, 2);
         // Add a pawn on another file, no changes expected.
         b.set_square(E6, WHITE, PAWN);
-        stats.0.compute(&b, &gs);
+        stats.0.compute(&mut b, &mut gs);
         assert_eq!(stats.0.num_doubled_pawns, 2);
         // Add a pawn backward in the d-file: there are now 3 doubled pawns.
         b.set_square(D2, WHITE, PAWN);
-        stats.0.compute(&b, &gs);
+        stats.0.compute(&mut b, &mut gs);
         assert_eq!(stats.0.num_doubled_pawns, 3);
 
         // Check that isolated and backward pawns are correctly counted.
@@ -195,19 +195,19 @@ mod tests {
         assert_eq!(stats.0.num_backward_pawns, 2);  // A bit weird?
         // Protect d4 pawn with a friend in e3: it is not isolated nor backward anymore.
         b.set_square(E3, WHITE, PAWN);
-        stats.0.compute(&b, &gs);
+        stats.0.compute(&mut b, &mut gs);
         assert_eq!(stats.0.num_doubled_pawns, 5);
         assert_eq!(stats.0.num_isolated_pawns, 0);
         assert_eq!(stats.0.num_backward_pawns, 1);
         // Add an adjacent friend to d2 pawn: no pawns are left isolated or backward.
         b.set_square(C2, WHITE, PAWN);
-        stats.0.compute(&b, &gs);
+        stats.0.compute(&mut b, &mut gs);
         assert_eq!(stats.0.num_doubled_pawns, 5);
         assert_eq!(stats.0.num_isolated_pawns, 0);
         assert_eq!(stats.0.num_backward_pawns, 0);
         // Add an isolated/backward white pawn in a far file.
         b.set_square(A2, WHITE, PAWN);
-        stats.0.compute(&b, &gs);
+        stats.0.compute(&mut b, &mut gs);
         assert_eq!(stats.0.num_doubled_pawns, 5);
         assert_eq!(stats.0.num_isolated_pawns, 1);
         assert_eq!(stats.0.num_backward_pawns, 1);
@@ -218,7 +218,7 @@ mod tests {
         b.set_square(D4, WHITE, PAWN);
         b.set_square(E5, WHITE, PAWN);
         b.set_square(E3, WHITE, PAWN);
-        stats.0.compute(&b, &gs);
+        stats.0.compute(&mut b, &mut gs);
         assert_eq!(stats.0.num_doubled_pawns, 2);
         assert_eq!(stats.0.num_isolated_pawns, 0);
         assert_eq!(stats.0.num_backward_pawns, 1);
