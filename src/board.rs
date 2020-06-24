@@ -383,6 +383,7 @@ impl Board {
     ///
     /// If a pawn is not currently attacking any piece, the bitboard
     /// will be empty.
+    #[inline]
     pub const fn get_pawn_captures(&self, square: Square, color: Color) -> Bitboard {
         PAWN_CAPTURES[color][square as usize] & self.by_color(opposite(color))
     }
@@ -391,36 +392,43 @@ impl Board {
     ///
     /// Both possible diagonals will be set, even if a friendly piece
     /// occupies one.
+    #[inline]
     pub const fn get_pawn_protections(&self, square: Square, color: Color) -> Bitboard {
         PAWN_CAPTURES[color][square as usize]
     }
 
     /// Get bishop rays: moves and captures bitboard.
+    #[inline]
     pub fn get_bishop_rays(&self, square: Square, color: Color) -> Bitboard {
         self.get_blockable_rays(square, color, &BISHOP_DIRS, false)
     }
 
     /// Get all bishop rays: moves, captures and protections bitboard.
+    #[inline]
     pub fn get_bishop_full_rays(&self, square: Square, color: Color) -> Bitboard {
         self.get_blockable_rays(square, color, &BISHOP_DIRS, true)
     }
 
     /// Get rook rays: moves and captures bitboard.
+    #[inline]
     pub fn get_rook_rays(&self, square: Square, color: Color) -> Bitboard {
         self.get_blockable_rays(square, color, &ROOK_DIRS, false)
     }
 
     /// Get all rook rays: moves, captures and protections bitboard.
+    #[inline]
     pub fn get_rook_full_rays(&self, square: Square, color: Color) -> Bitboard {
         self.get_blockable_rays(square, color, &ROOK_DIRS, true)
     }
 
     /// Get queen rays: moves and captures bitboard.
+    #[inline]
     pub fn get_queen_rays(&self, square: Square, color: Color) -> Bitboard {
         self.get_blockable_rays(square, color, &QUEEN_DIRS, false)
     }
 
     /// Get all queen rays: moves, captures and protections bitboard.
+    #[inline]
     pub fn get_queen_full_rays(&self, square: Square, color: Color) -> Bitboard {
         self.get_blockable_rays(square, color, &QUEEN_DIRS, true)
     }
@@ -465,22 +473,26 @@ impl Board {
     }
 
     /// Get knight rays: moves and captures bitboard.
-    pub fn get_knight_rays(&self, square: Square, color: Color) -> Bitboard {
+    #[inline]
+    pub const fn get_knight_rays(&self, square: Square, color: Color) -> Bitboard {
         KNIGHT_RAYS[square as usize] & !self.by_color(color)
     }
 
     /// Get all knight rays: moves, captures and protections bitboard.
-    pub fn get_knight_full_rays(&self, square: Square) -> Bitboard {
+    #[inline]
+    pub const fn get_knight_full_rays(&self, square: Square) -> Bitboard {
         KNIGHT_RAYS[square as usize]
     }
 
     /// Get king rays: moves and captures bitboard.
-    pub fn get_king_rays(&self, square: Square, color: Color) -> Bitboard {
+    #[inline]
+    pub const fn get_king_rays(&self, square: Square, color: Color) -> Bitboard {
         KING_RAYS[square as usize] & !self.by_color(color)
     }
 
     /// Get all king rays: moves, captures and protections bitboard.
-    pub fn get_king_full_rays(&self, square: Square) -> Bitboard {
+    #[inline]
+    pub const fn get_king_full_rays(&self, square: Square) -> Bitboard {
         KING_RAYS[square as usize]
     }
 
@@ -628,6 +640,35 @@ mod tests {
         assert_eq!(b.get_piece_on(D8), QUEEN);
         assert_eq!(b.get_piece_on(E1), KING);
         assert_eq!(b.get_piece_on(E8), KING);
+    }
+
+    #[test]
+    fn test_move_square() {
+        let mut b = Board::new_empty();
+        b.set_square(D4, WHITE, PAWN);
+        b.move_square(D4, D5);
+        let bp_d4 = bit_pos(D4);
+        let bp_d5 = bit_pos(D5);
+        // Source square is cleared.
+        assert_eq!(b.combined() & bp_d4, 0);
+        assert_eq!(b.by_color(WHITE) & bp_d4, 0);
+        assert_eq!(b.by_piece(PAWN) & bp_d4, 0);
+        // Destination square is set only to the right color and piece.
+        assert_eq!(b.combined() & bp_d5, bp_d5);
+        assert_eq!(b.by_color(WHITE) & bp_d5, bp_d5);
+        assert_eq!(b.by_piece(PAWN) & bp_d5, bp_d5);
+
+        b.set_square(E6, BLACK, PAWN);
+        b.move_square(D5, E6);
+        let bp_e6 = bit_pos(E6);
+        assert_eq!(b.combined() & bp_d5, 0);
+        assert_eq!(b.by_color(WHITE) & bp_d5, 0);
+        assert_eq!(b.by_piece(PAWN) & bp_d5, 0);
+        assert_eq!(b.combined() & bp_e6, bp_e6);
+        assert_eq!(b.by_color(WHITE) & bp_e6, bp_e6);
+        assert_eq!(b.by_color(BLACK) & bp_e6, 0);
+        assert_eq!(b.by_piece(PAWN) & bp_e6, bp_e6);
+
     }
 
     #[test]
