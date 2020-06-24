@@ -42,66 +42,105 @@ impl Move {
     }
 
     /// Apply this move to `board` and `game_state`.
+    ///
+    /// Set automatic queen promotion for pawns, register captured
+    /// pieces and castle options.
     pub fn apply_to(&mut self, board: &mut Board, game_state: &mut GameState) {
+        // Save current castling options to unmake later.
         self.old_castles = game_state.castling;
-        // If a king moves, remove it from castling options.
-        if self.source == E1 { game_state.castling &= !CASTLE_WH_MASK; }
-        else if self.source == E8 { game_state.castling &= !CASTLE_BL_MASK; }
-        // Same for rooks.
+
+        let piece = board.get_piece_on(self.source);
+        // Handle king castling.
+        if piece == KING {
+            if let Some(castle) = self.get_castle() {
+                match castle {
+                    CASTLE_WH_K => {
+                        board.move_square(E1, G1);
+                        board.move_square(H1, F1);
+                        game_state.castling &= !CASTLE_WH_MASK;
+                    }
+                    CASTLE_WH_Q => {
+                        board.move_square(E1, C1);
+                        board.move_square(A1, D1);
+                        game_state.castling &= !CASTLE_WH_MASK;
+                    }
+                    CASTLE_BL_K => {
+                        board.move_square(E8, G8);
+                        board.move_square(H8, F8);
+                        game_state.castling &= !CASTLE_BL_MASK;
+                    }
+                    CASTLE_BL_Q => {
+                        board.move_square(E8, C8);
+                        board.move_square(A8, D8);
+                        game_state.castling &= !CASTLE_BL_MASK;
+                    }
+                    _ => { panic!("Invalid castle.") }
+                }
+                game_state.color = opposite(game_state.color);
+                return
+            } else {
+                // If the king moved from starting square, remove it from castling options.
+                if self.source == E1 { game_state.castling &= !CASTLE_WH_MASK; }
+                else if self.source == E8 { game_state.castling &= !CASTLE_BL_MASK; }
+            }
+        }
+        // Record captured piece if any.
+        if !board.is_empty(self.dest) {
+            self.capture = Some(board.get_piece_on(self.dest));
+        }
+
+        // Move the piece.
+        board.move_square(self.source, self.dest);
+
+        // Apply promotion if any.
+        if let Some(piece) = self.promotion {
+            board.set_piece(self.dest, PAWN, piece);
+        }
+
+        // If a rook moved, remove the castle side.
         if self.source == A1 || self.dest == A1 { game_state.castling &= !CASTLE_WH_Q; }
         else if self.source == H1 || self.dest == H1 { game_state.castling &= !CASTLE_WH_K; }
         else if self.source == A8 || self.dest == A8 { game_state.castling &= !CASTLE_BL_Q; }
         else if self.source == H8 || self.dest == H8 { game_state.castling &= !CASTLE_BL_K; }
-        // Update board and game state.
-        self.apply_to_board(board);
-        game_state.color = opposite(game_state.color);
-    }
 
-    /// Apply the move into `board`.
-    pub fn apply_to_board(&mut self, board: &mut Board) {
-        let piece = board.get_piece_on(self.source);
-        // If a king is castling, apply special move.
-        if piece == KING {
-            if let Some(castle) = self.get_castle() {
-                match castle {
-                    CASTLE_WH_K => { board.move_square(E1, G1); board.move_square(H1, F1); }
-                    CASTLE_WH_Q => { board.move_square(E1, C1); board.move_square(A1, D1); }
-                    CASTLE_BL_K => { board.move_square(E8, G8); board.move_square(H8, F8); }
-                    CASTLE_BL_Q => { board.move_square(E8, C8); board.move_square(A8, D8); }
-                    _ => { panic!("Invalid castle.") }
-                }
-                return
-            }
-        }
-        if !board.is_empty(self.dest) {
-            self.capture = Some(board.get_piece_on(self.dest));
-        }
-        board.move_square(self.source, self.dest);
-        if let Some(piece) = self.promotion {
-            board.set_piece(self.dest, PAWN, piece);
-        }
+        // Finally, switch to the opposing player in the game state.
+        game_state.color = opposite(game_state.color);
     }
 
     /// Unmake a move.
     pub fn unmake(&self, board: &mut Board, game_state: &mut GameState) {
-        if let Some(castle) = self.get_castle() {
-            match castle {
-                CASTLE_WH_K => { board.move_square(G1, E1); board.move_square(F1, H1); }
-                CASTLE_WH_Q => { board.move_square(C1, E1); board.move_square(D1, A1); }
-                CASTLE_BL_K => { board.move_square(G8, E8); board.move_square(F8, H8); }
-                CASTLE_BL_Q => { board.move_square(C8, E8); board.move_square(D8, A8); }
-                _ => { panic!("Invalid castle.") }
-            }
-        } else {
-            board.move_square(self.dest, self.source);
-            if let Some(piece) = self.promotion {
-                board.set_piece(self.source, piece, PAWN);
-            }
-            if let Some(piece) = self.capture {
-                board.set_square(self.dest, game_state.color, piece);
+        // Always restore previous castle options.
+        game_state.castling = self.old_castles;
+        // If the move is a castle, unmake it properly.
+        let piece = board.get_piece_on(self.dest);
+        if piece == KING {
+            if let Some(castle) = self.get_castle() {
+                match castle {
+                    CASTLE_WH_K => { board.move_square(G1, E1); board.move_square(F1, H1); }
+                    CASTLE_WH_Q => { board.move_square(C1, E1); board.move_square(D1, A1); }
+                    CASTLE_BL_K => { board.move_square(G8, E8); board.move_square(F8, H8); }
+                    CASTLE_BL_Q => { board.move_square(C8, E8); board.move_square(D8, A8); }
+                    _ => { panic!("Invalid castle.") }
+                }
+                game_state.color = opposite(game_state.color);
+                return
             }
         }
-        game_state.castling = self.old_castles;
+
+        // Move the piece back.
+        board.move_square(self.dest, self.source);
+
+        // Cancel the promotion.
+        if let Some(piece) = self.promotion {
+            board.set_piece(self.source, piece, PAWN);
+        }
+
+        // Restore captured piece.
+        if let Some(piece) = self.capture {
+            board.set_square(self.dest, game_state.color, piece);
+        }
+
+        // And switch back to previous player.
         game_state.color = opposite(game_state.color);
     }
 
@@ -178,13 +217,14 @@ mod tests {
     #[test]
     fn test_apply_to_board() {
         let mut b = Board::new_empty();
+        let mut gs = GameState::new();
 
         // Put 2 enemy knights on board.
         b.set_square(D4, WHITE, KNIGHT);
         b.set_square(F4, BLACK, KNIGHT);
         // Move white knight in a position attacked by black knight.
         let mut m = Move::new(D4, E6);
-        m.apply_to_board(&mut b);
+        m.apply_to(&mut b, &mut gs);
         assert!(b.is_empty(D4));
         assert_eq!(b.get_color_on(E6), WHITE);
         assert_eq!(b.get_piece_on(E6), KNIGHT);
@@ -192,7 +232,7 @@ mod tests {
         assert!(m.capture.is_none());
         // Sack it with black knight
         let mut m = Move::new(F4, E6);
-        m.apply_to_board(&mut b);
+        m.apply_to(&mut b, &mut gs);
         assert_eq!(b.get_color_on(E6), BLACK);
         assert_eq!(b.get_piece_on(E6), KNIGHT);
         assert_eq!(count_bits(b.combined()), 1);
@@ -242,6 +282,7 @@ mod tests {
         let mut b = Board::new_empty();
         let mut gs = GameState::new();
 
+        // On unmaking a move, the white pawn is back to its original square.
         b.set_square(D4, WHITE, PAWN);
         let mut m = Move::new(D4, D5);
         m.apply_to(&mut b, &mut gs);
@@ -249,6 +290,21 @@ mod tests {
         assert!(b.is_empty(D5));
         assert_eq!(b.get_color_on(D4), WHITE);
         assert_eq!(b.get_piece_on(D4), PAWN);
+
+        // Castle options should be properly unmade.
+        b.set_square(E1, WHITE, KING);
+        b.set_square(H1, WHITE, ROOK);
+        let mut m = Move::new(E1, G1);
+        m.apply_to(&mut b, &mut gs);
+        assert!(!b.is_empty(G1));
+        assert!(!b.is_empty(F1));
+        assert_eq!(gs.castling, CASTLE_MASK ^ CASTLE_WH_MASK);
+        m.unmake(&mut b, &mut gs);
+        assert!(b.is_empty(G1));
+        assert!(b.is_empty(F1));
+        assert_eq!(b.get_piece_on(E1), KING);
+        assert_eq!(b.get_piece_on(H1), ROOK);
+        assert_eq!(gs.castling, CASTLE_MASK);
     }
 
     #[test]

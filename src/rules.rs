@@ -416,10 +416,9 @@ mod tests {
 
     #[test]
     fn test_get_king_moves() {
-        let mut gs = GameState::new();
-
         // King can move 1 square in any direction.
         let mut b = Board::new_empty();
+        let mut gs = GameState::new();
         b.set_square(D4, WHITE, KING);
         assert_eq!(get_piece_moves(&mut b, &mut gs, D4, WHITE).len(), 8);
         b.set_square(E5, WHITE, PAWN);
@@ -427,6 +426,7 @@ mod tests {
 
         // If castling is available, other moves are possible: 5 moves + 2 castles.
         let mut b = Board::new_empty();
+        let mut gs = GameState::new();
         b.set_square(E1, WHITE, KING);
         b.set_square(A1, WHITE, ROOK);
         b.set_square(H1, WHITE, ROOK);
@@ -438,6 +438,89 @@ mod tests {
         b.set_square(A8, BLACK, ROOK);
         b.set_square(H8, BLACK, ROOK);
         assert_eq!(get_piece_moves(&mut b, &mut gs, E8, BLACK).len(), 5 + 2);
+    }
+
+    #[test]
+    fn test_get_king_castles() {
+        // Rule 1 (king/rook on initial rank) is not checked here.
+        let mut b = Board::new_empty();
+        let mut gs = GameState::new();
+        b.set_square(E1, WHITE, KING);
+        b.set_square(A1, WHITE, ROOK);
+        b.set_square(H1, WHITE, ROOK);
+        b.set_square(E8, BLACK, KING);
+        b.set_square(A8, BLACK, ROOK);
+        b.set_square(H8, BLACK, ROOK);
+
+        // 2. Neither the king nor the chosen rook has previously moved.
+        gs.color = WHITE;
+        let moves = get_piece_moves(&mut b, &mut gs, E1, WHITE);
+        assert!(moves.iter().any(|m| m.get_castle() == Some(CASTLE_WH_K)));
+        assert!(moves.iter().any(|m| m.get_castle() == Some(CASTLE_WH_Q)));
+        assert!(moves.iter().all(|m| m.get_castle() != Some(CASTLE_BL_K)));
+        assert!(moves.iter().all(|m| m.get_castle() != Some(CASTLE_BL_Q)));
+        gs.color = BLACK;
+        let moves = get_piece_moves(&mut b, &mut gs, E8, BLACK);
+        assert!(moves.iter().all(|m| m.get_castle() != Some(CASTLE_WH_K)));
+        assert!(moves.iter().all(|m| m.get_castle() != Some(CASTLE_WH_Q)));
+        assert!(moves.iter().any(|m| m.get_castle() == Some(CASTLE_BL_K)));
+        assert!(moves.iter().any(|m| m.get_castle() == Some(CASTLE_BL_Q)));
+        // Either the king moved and lost all castles...
+        gs.color = WHITE;
+        gs.castling = CASTLE_MASK ^ CASTLE_WH_MASK;
+        let moves = get_piece_moves(&mut b, &mut gs, E1, WHITE);
+        assert!(moves.iter().all(|m| m.get_castle() != Some(CASTLE_WH_K)));
+        assert!(moves.iter().all(|m| m.get_castle() != Some(CASTLE_WH_Q)));
+        // Or a rook moves and the player loses only one castle.
+        gs.castling = CASTLE_MASK ^ CASTLE_WH_Q;
+        let moves = get_piece_moves(&mut b, &mut gs, E1, WHITE);
+        assert!(moves.iter().any(|m| m.get_castle() == Some(CASTLE_WH_K)));
+        assert!(moves.iter().all(|m| m.get_castle() != Some(CASTLE_WH_Q)));
+
+        // 3. There are no pieces between the king and the chosen rook.
+        gs.castling = CASTLE_MASK;
+        b.set_square(C1, BLACK, KNIGHT);  // Black knight blocking white queen-side castle.
+        let moves = get_piece_moves(&mut b, &mut gs, E1, WHITE);
+        assert!(moves.iter().any(|m| m.get_castle() == Some(CASTLE_WH_K)));
+        assert!(moves.iter().all(|m| m.get_castle() != Some(CASTLE_WH_Q)));
+        gs.color = BLACK;
+        b.set_square(G8, WHITE, KNIGHT);  // White knight blocking black king-side castle.
+        let moves = get_piece_moves(&mut b, &mut gs, E8, BLACK);
+        assert!(moves.iter().all(|m| m.get_castle() != Some(CASTLE_BL_K)));
+        assert!(moves.iter().any(|m| m.get_castle() == Some(CASTLE_BL_Q)));
+
+        b.clear_square(C1, BLACK, KNIGHT);
+        b.clear_square(G8, WHITE, KNIGHT);
+
+        // 4. The king is not currently in check.
+        gs.color = WHITE;
+        b.set_square(F2, BLACK, BISHOP);  // Check white king.
+        let moves = get_piece_moves(&mut b, &mut gs, E1, WHITE);
+        assert!(moves.iter().all(|m| m.get_castle() != Some(CASTLE_WH_K)));
+        assert!(moves.iter().all(|m| m.get_castle() != Some(CASTLE_WH_Q)));
+        gs.color = BLACK;
+        b.set_square(H5, WHITE, BISHOP);  // Check black king.
+        let moves = get_piece_moves(&mut b, &mut gs, E8, BLACK);
+        assert!(moves.iter().all(|m| m.get_castle() != Some(CASTLE_BL_K)));
+        assert!(moves.iter().all(|m| m.get_castle() != Some(CASTLE_BL_Q)));
+
+        b.clear_square(F2, BLACK, BISHOP);
+        b.clear_square(H5, WHITE, BISHOP);
+
+        // 5. The king does not pass through a square that is attacked by an enemy piece.
+        gs.color = WHITE;
+        b.set_square(F8, BLACK, QUEEN);  // Black queen protects f-file against king-side castle.
+        let moves = get_piece_moves(&mut b, &mut gs, E1, WHITE);
+        assert!(moves.iter().all(|m| m.get_castle() != Some(CASTLE_WH_K)));
+        assert!(moves.iter().any(|m| m.get_castle() == Some(CASTLE_WH_Q)));
+
+        b.clear_square(F8, BLACK, QUEEN);
+
+        // 6. The king does not end up in check.
+        b.set_square(G8, BLACK, QUEEN);
+        let moves = get_piece_moves(&mut b, &mut gs, E1, WHITE);
+        assert!(moves.iter().all(|m| m.get_castle() != Some(CASTLE_WH_K)));
+        assert!(moves.iter().any(|m| m.get_castle() == Some(CASTLE_WH_Q)));
     }
 
     #[test]

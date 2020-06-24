@@ -298,6 +298,9 @@ impl Uci {
 // UCI command parsers
 
 /// Parse an UCI command.
+///
+/// Handle main UCI commands: position, go, etc. The command "p" is an
+/// alias to "position".
 fn parse_command(s: &str) -> UciCmd {
     if s.len() == 0 {
         return UciCmd::Unknown("Empty command.".to_string());
@@ -309,7 +312,7 @@ fn parse_command(s: &str) -> UciCmd {
         "isready" => UciCmd::IsReady,
         "ucinewgame" => UciCmd::UciNewGame,
         "stop" => UciCmd::Stop,
-        "position" => parse_position_command(&fields[1..]),
+        "position" | "p" => parse_position_command(&fields[1..]),
         "go" => parse_go_command(&fields[1..]),
         "quit" => UciCmd::Quit,
         "vatunode" => UciCmd::VatuNode,
