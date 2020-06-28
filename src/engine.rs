@@ -64,6 +64,8 @@ pub enum Cmd {
     WorkerBestMove(Option<Move>),
     /// Log current node.
     LogNode,
+    /// Log debug information about a move.
+    LogMove(Move),
 
     // Commands that can be sent by the engine.
 
@@ -127,15 +129,8 @@ impl Engine {
             Cmd::WorkerInfo(infos) => self.reply(Cmd::Info(infos.to_vec())),
             Cmd::WorkerBestMove(m) => self.reply(Cmd::BestMove(m.clone())),
             // Other commands.
-            Cmd::LogNode => {
-                let mut s = vec!();
-                self.node.board.draw_to(&mut s);
-                self.reply(Cmd::Log(format!(
-                    "Current node:\n{}{}",
-                    String::from_utf8_lossy(&s),
-                    self.node.game_state
-                )));
-            }
+            Cmd::LogNode => self.log_node(),
+            Cmd::LogMove(m) => self.log_move(m),
             _ => eprintln!("Not an engine input command: {:?}", cmd),
         }
     }
@@ -208,10 +203,7 @@ impl Engine {
     fn stop(&mut self) {
         self.working.store(false, atomic::Ordering::SeqCst);
     }
-}
 
-/// UCI commands management.
-impl Engine {
     /// Setup engine for UCI communication.
     pub fn setup_uci(&mut self, uci_s: mpsc::Sender<uci::Cmd>) {
         // Create a channel to receive commands from Uci.
@@ -241,13 +233,7 @@ impl Engine {
 
     /// Start working using parameters passed with a "go" command.
     fn uci_go(&mut self, g_args: &Vec<uci::GoArgs>) {
-        let mut args = analysis::AnalysisParams {
-            move_time: -1,
-            white_time: -1,
-            black_time: -1,
-            white_inc: -1,
-            black_inc: -1,
-        };
+        let mut args = analysis::AnalysisParams::new();
         for arg in g_args {
             match arg {
                 uci::GoArgs::MoveTime(ms) => args.move_time = *ms,
@@ -259,6 +245,24 @@ impl Engine {
                 _ => {}
             }
         }
+        self.work(&args);
+    }
+
+    /// Log current node information.
+    fn log_node(&mut self) {
+        let mut s = vec!();
+        self.node.board.draw_to(&mut s);
+        self.reply(Cmd::Log(format!(
+            "Current node:\n{}{}",
+            String::from_utf8_lossy(&s),
+            self.node.game_state
+        )));
+    }
+
+    /// Log a move information.
+    fn log_move(&mut self, m: &Move) {
+        let mut args = analysis::AnalysisParams::new();
+        args.focus = Some(m.clone());
         self.work(&args);
     }
 }

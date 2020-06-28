@@ -60,6 +60,7 @@ pub enum UciCmd {
 
     // Unofficial commands mostly for debugging.
     VatuNode,
+    VatuMove(String),
 
     Unknown(String),
 }
@@ -205,6 +206,9 @@ impl Uci {
             UciCmd::VatuNode => {
                 self.send_engine_command(engine::Cmd::LogNode);
             }
+            UciCmd::VatuMove(m) => {
+                self.send_engine_command(engine::Cmd::LogMove(Move::from_uci_string(m)));
+            }
             UciCmd::Unknown(c) => { self.log(format!("Unknown command: {}", c)); }
         }
         true
@@ -316,6 +320,7 @@ fn parse_command(s: &str) -> UciCmd {
         "go" => parse_go_command(&fields[1..]),
         "quit" => UciCmd::Quit,
         "vatunode" => UciCmd::VatuNode,
+        "vatumove" => UciCmd::VatuMove(fields[1].to_string()),
         c => UciCmd::Unknown(c.to_string()),
     }
 }

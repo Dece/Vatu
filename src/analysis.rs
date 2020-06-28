@@ -49,6 +49,20 @@ pub struct AnalysisParams {
     pub black_time: i32,
     pub white_inc: i32,
     pub black_inc: i32,
+    pub focus: Option<Move>,
+}
+
+impl AnalysisParams {
+    pub fn new() -> AnalysisParams {
+        AnalysisParams {
+            move_time: -1,
+            white_time: -1,
+            black_time: -1,
+            white_inc: -1,
+            black_inc: -1,
+            focus: None,
+        }
+    }
 }
 
 /// Analysis info to report.
@@ -105,6 +119,9 @@ impl Analyzer {
             self.log(format!("Analyzing node:\n{}", &self.node));
             let moves = self.node.get_player_moves();
             self.log(format!("Legal moves: {}", Move::list_to_uci_string(&moves)));
+            if let Some(focus) = &args.focus {
+                self.log(format!("Focus on: {}", focus.to_uci_string()));
+            }
             self.log(format!("Move time: {}", self.time_limit));
         }
 
