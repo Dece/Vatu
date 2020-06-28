@@ -439,7 +439,7 @@ impl Board {
     /// combination of squares either empty or occupied by an enemy
     /// piece they can reach.
     ///
-    /// If `protection` is true, consider friend pieces in rays as well.
+    /// If `protection` is true, include friend pieces in rays as well.
     fn get_blockable_rays(
         &self,
         square: Square,

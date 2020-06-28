@@ -77,10 +77,11 @@ TODO
 ----
 
 - [X] Support time constraints
-- [ ] Unmake mechanism instead of allocating nodes like there is no tomorrow
+- [X] Unmake mechanism instead of allocating nodes like there is no tomorrow
 - [X] Precompute some pieces moves, maybe (done for knights)
 - [ ] Transposition table that does not actually slows search down
 - [ ] Check Zobrist hashes for previous point
 - [X] Actual bitboard
 - [ ] Some kind of move ordering could be great
 - [ ] Multithreading (never)
+- [ ] Avoid 3-fold repetitions when winning

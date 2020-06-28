@@ -97,7 +97,7 @@ fn get_piece_moves(
         match piece {
             PAWN => {
                 board.get_pawn_progresses(square, color)
-                    | board.get_pawn_captures(square, color)
+                | board.get_pawn_captures(square, color)
             }
             KING => board.get_king_rays(square, color),
             BISHOP => board.get_bishop_rays(square, color),
@@ -541,6 +541,16 @@ mod tests {
         assert!(!is_illegal(&mut b, &mut gs, &mut Move::new(E1, F1)));
         let all_wh_moves = get_piece_moves(&mut b, &mut gs, E1, WHITE);
         assert_eq!(all_wh_moves.len(), 2);
+
+        let mut b = Board::new_empty();
+        let mut gs = GameState::new();
+
+        // Pin a pawn with an enemy bishop.
+        b.set_square(E1, WHITE, KING);
+        b.set_square(F2, WHITE, PAWN);
+        b.set_square(H4, BLACK, BISHOP);
+        assert!(is_illegal(&mut b, &mut gs, &mut Move::new(F2, F3)));
+        assert!(is_illegal(&mut b, &mut gs, &mut Move::new(F2, F4)));
     }
 
     #[test]
