@@ -1,5 +1,6 @@
 //! Basic type definitions and functions.
 
+// Reexport all precomputed board data for simplicity.
 pub use crate::precomputed::*;
 
 /// Color type, used to index `Board.color`.

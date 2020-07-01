@@ -5,6 +5,7 @@ use std::fmt;
 use crate::board::*;
 use crate::castling::*;
 use crate::rules::GameState;
+use crate::zobrist::*;
 
 /// A movement, with before/after positions and optional promotion.
 #[derive(Clone, PartialEq)]
@@ -45,66 +46,106 @@ impl Move {
     ///
     /// Set automatic queen promotion for pawns, register captured
     /// pieces and castle options.
-    pub fn apply_to(&mut self, board: &mut Board, game_state: &mut GameState) {
+    pub fn apply_to(&mut self, board: &mut Board, game_state: &mut GameState) -> ZobristHash {
+        // Changes to a Zobrist hash due to this move.
+        let mut changes: ZobristHash = 0;
         // Save current castling options to unmake later.
         self.old_castles = game_state.castling;
 
         let piece = board.get_piece_on(self.source);
-        // Handle king castling.
         if piece == KING {
+            // Handle king castling.
             if let Some(castle) = self.get_castle() {
                 match castle {
                     CASTLE_WH_K => {
                         board.move_square(E1, G1);
                         board.move_square(H1, F1);
                         game_state.castling &= !CASTLE_WH_MASK;
+                        changes ^= ZOBRIST_CASTLES[ZOBRIST_CASTLE_WH_K];
+                        changes ^= ZOBRIST_CASTLES[ZOBRIST_CASTLE_WH_Q];
                     }
                     CASTLE_WH_Q => {
                         board.move_square(E1, C1);
                         board.move_square(A1, D1);
                         game_state.castling &= !CASTLE_WH_MASK;
+                        changes ^= ZOBRIST_CASTLES[ZOBRIST_CASTLE_WH_K];
+                        changes ^= ZOBRIST_CASTLES[ZOBRIST_CASTLE_WH_Q];
                     }
                     CASTLE_BL_K => {
                         board.move_square(E8, G8);
                         board.move_square(H8, F8);
                         game_state.castling &= !CASTLE_BL_MASK;
+                        changes ^= ZOBRIST_CASTLES[ZOBRIST_CASTLE_BL_K];
+                        changes ^= ZOBRIST_CASTLES[ZOBRIST_CASTLE_BL_Q];
                     }
                     CASTLE_BL_Q => {
                         board.move_square(E8, C8);
                         board.move_square(A8, D8);
                         game_state.castling &= !CASTLE_BL_MASK;
+                        changes ^= ZOBRIST_CASTLES[ZOBRIST_CASTLE_BL_K];
+                        changes ^= ZOBRIST_CASTLES[ZOBRIST_CASTLE_BL_Q];
                     }
                     _ => { panic!("Invalid castle.") }
                 }
                 game_state.color = opposite(game_state.color);
-                return
+                changes ^= ZOBRIST_BLACK_TURN;
+                return changes
             } else {
                 // If the king moved from starting square, remove it from castling options.
-                if self.source == E1 { game_state.castling &= !CASTLE_WH_MASK; }
-                else if self.source == E8 { game_state.castling &= !CASTLE_BL_MASK; }
+                if self.source == E1 {
+                    game_state.castling &= !CASTLE_WH_MASK;
+                    changes ^= ZOBRIST_CASTLES[ZOBRIST_CASTLE_WH_K];
+                    changes ^= ZOBRIST_CASTLES[ZOBRIST_CASTLE_WH_Q];
+                }
+                else if self.source == E8 {
+                    game_state.castling &= !CASTLE_BL_MASK;
+                    changes ^= ZOBRIST_CASTLES[ZOBRIST_CASTLE_BL_K];
+                    changes ^= ZOBRIST_CASTLES[ZOBRIST_CASTLE_BL_Q];
+                }
             }
         }
+
         // Record captured piece if any.
         if !board.is_empty(self.dest) {
-            self.capture = Some(board.get_piece_on(self.dest));
+            let captured_piece = board.get_piece_on(self.dest);
+            changes ^= get_piece_hash(opposite(game_state.color), captured_piece, self.dest);
+            self.capture = Some(captured_piece);
         }
 
-        // Move the piece.
+        // Move the piece and apply promotion if any.
         board.move_square(self.source, self.dest);
-
-        // Apply promotion if any.
-        if let Some(piece) = self.promotion {
-            board.set_piece(self.dest, PAWN, piece);
+        changes ^= get_piece_hash(game_state.color, piece, self.source);
+        if let Some(promotion_piece) = self.promotion {
+            board.set_piece(self.dest, PAWN, promotion_piece);
+            changes ^= get_piece_hash(game_state.color, promotion_piece, self.dest);
+        } else {
+            changes ^= get_piece_hash(game_state.color, piece, self.dest);
         }
 
         // If a rook moved, remove the castle side.
-        if self.source == A1 || self.dest == A1 { game_state.castling &= !CASTLE_WH_Q; }
-        else if self.source == H1 || self.dest == H1 { game_state.castling &= !CASTLE_WH_K; }
-        else if self.source == A8 || self.dest == A8 { game_state.castling &= !CASTLE_BL_Q; }
-        else if self.source == H8 || self.dest == H8 { game_state.castling &= !CASTLE_BL_K; }
+        if self.source == A1 || self.dest == A1 {
+            game_state.castling &= !CASTLE_WH_Q;
+            changes ^= ZOBRIST_CASTLES[ZOBRIST_CASTLE_WH_Q];
+        }
+        else if self.source == H1 || self.dest == H1 {
+            game_state.castling &= !CASTLE_WH_K;
+            changes ^= ZOBRIST_CASTLES[ZOBRIST_CASTLE_WH_K];
+        }
+        else if self.source == A8 || self.dest == A8 {
+            game_state.castling &= !CASTLE_BL_Q;
+            changes ^= ZOBRIST_CASTLES[ZOBRIST_CASTLE_BL_Q];
+        }
+        else if self.source == H8 || self.dest == H8 {
+            game_state.castling &= !CASTLE_BL_K;
+            changes ^= ZOBRIST_CASTLES[ZOBRIST_CASTLE_BL_K];
+        }
 
         // Finally, switch to the opposing player in the game state.
         game_state.color = opposite(game_state.color);
+        changes ^= ZOBRIST_BLACK_TURN;
+
+        // Return changes as a Zobrist hash.
+        changes
     }
 
     /// Unmake a move.

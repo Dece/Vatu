@@ -4,6 +4,7 @@ use crate::board;
 use crate::movement::Move;
 use crate::rules;
 use crate::stats;
+use crate::zobrist;
 
 /// Analysis node: a board along with the game state.
 #[derive(Clone, PartialEq)]
@@ -12,6 +13,8 @@ pub struct Node {
     pub board: board::Board,
     /// Game state.
     pub game_state: rules::GameState,
+    /// Zobrist hash of the node.
+    pub hash: zobrist::ZobristHash,
 }
 
 impl Node {
@@ -20,16 +23,20 @@ impl Node {
         Node {
             board: board::Board::new_empty(),
             game_state: rules::GameState::new(),
+            hash: zobrist::get_new_game_hash(),
         }
     }
 
     /// Apply a move to this node.
-    pub fn apply_move(&mut self, m: &mut Move) {
-        m.apply_to(&mut self.board, &mut self.game_state);
+    pub fn apply_move(&mut self, m: &mut Move) -> zobrist::ZobristHash {
+        let changes = m.apply_to(&mut self.board, &mut self.game_state);
+        self.hash ^= changes;
+        changes
     }
 
-    pub fn unmake_move(&mut self, m: &Move) {
+    pub fn unmake_move(&mut self, m: &Move, changes: zobrist::ZobristHash) {
         m.unmake(&mut self.board, &mut self.game_state);
+        self.hash ^= changes;
     }
 
     /// Return player moves from this node.

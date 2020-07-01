@@ -186,7 +186,9 @@ impl Engine {
 
     /// Apply a series of moves to the current node.
     fn apply_moves(&mut self, moves: &mut Vec<Move>) {
-        moves.iter_mut().for_each(|m| m.apply_to(&mut self.node.board, &mut self.node.game_state));
+        for m in moves.iter_mut() {
+            m.apply_to(&mut self.node.board, &mut self.node.game_state);
+        }
     }
 
     /// Start working on board, returning the best move found.

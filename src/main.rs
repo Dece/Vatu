@@ -11,6 +11,7 @@ pub mod precomputed;
 pub mod rules;
 pub mod stats;
 pub mod uci;
+pub mod zobrist;
 
 fn main() {
     let args = App::new("Vatu")

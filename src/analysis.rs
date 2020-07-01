@@ -190,10 +190,13 @@ impl Analyzer {
         let mut best_score = MIN_F32;
         let mut best_move = None;
         for m in &mut moves {
-            node.apply_move(m);
+            let hash_changes = node.apply_move(m);
             let result = self.negamax(node, -beta, -alpha, depth + 1);
-            node.unmake_move(m);
+            node.unmake_move(m, hash_changes);
             let score = -result.0;
+            if self.debug && depth == 0 {
+                self.log(format!("move {} evaluated {}", m.to_uci_string(), score));
+            }
             if score > best_score {
                 best_score = score;
                 best_move = Some(m.to_owned());
